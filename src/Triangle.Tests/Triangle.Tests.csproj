@@ -5,6 +5,8 @@
     <RootNamespace>TriangleNet.Tests</RootNamespace>
     <AssemblyName>Triangle.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- Custom entry point (see Program.cs) used to run crash-prone scenarios in a child process. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
 
