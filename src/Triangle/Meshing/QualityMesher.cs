@@ -207,7 +207,8 @@ namespace TriangleNet.Meshing
                 }
             }
 
-            if (encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))))
+            if (encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))) &&
+                (behavior.CanSplitSegment == null || behavior.CanSplitSegment(testsubseg.seg)))
             {
                 // Add the subsegment to the list of encroached subsegments.
                 // Be sure to get the orientation right.

@@ -59,6 +59,7 @@ namespace TriangleNet.Meshing
                 behavior.ConformingDelaunay = options.ConformingDelaunay;
                 behavior.Convex = options.Convex;
                 behavior.NoBisect = options.SegmentSplitting;
+                behavior.CanSplitSegment = options.CanSplitSegment;
 
                 if (behavior.ConformingDelaunay)
                 {

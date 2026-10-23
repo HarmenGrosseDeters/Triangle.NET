@@ -46,5 +46,19 @@ namespace TriangleNet.Meshing
         /// intersection points don't lie exactly on the segments. See <see cref="SegmentNoder"/>.
         /// </remarks>
         public bool ResolveIntersections { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a filter deciding whether a segment may be split during mesh
+        /// refinement (in addition to <see cref="SegmentSplitting"/>). If null (default),
+        /// all segments may be split.
+        /// </summary>
+        /// <remarks>
+        /// The filter is called with mesh subsegments, so it should decide based on
+        /// <see cref="ISegment.Label"/> (labels of input segments are passed on to their
+        /// subsegments). Segments that may not be split keep their input vertices only
+        /// (except for intersections with other segments), but the quality constraints
+        /// can't be guaranteed near them.
+        /// </remarks>
+        public System.Func<TriangleNet.Geometry.ISegment, bool> CanSplitSegment { get; set; }
     }
 }

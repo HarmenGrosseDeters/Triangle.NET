@@ -663,6 +663,10 @@ namespace TriangleNet
                                 horiz.Sym(ref testtri);
                                 enq = testtri.tri.id != DUMMY;
                             }
+                            if (enq && (behavior.CanSplitSegment != null))
+                            {
+                                enq = behavior.CanSplitSegment(brokensubseg.seg);
+                            }
                             if (enq)
                             {
                                 // Add the subsegment to the list of encroached subsegments.

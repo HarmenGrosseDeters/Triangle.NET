@@ -179,6 +179,12 @@ namespace TriangleNet
         /// 1 = no new vertices on the boundary
         /// 2 = prevent all segment splitting, including internal boundaries
         /// </remarks>
+        /// <summary>
+        /// Optional filter deciding whether a subsegment may be split (in addition to
+        /// <see cref="NoBisect"/>). If null, all subsegments may be split.
+        /// </summary>
+        public Func<ISegment, bool> CanSplitSegment { get; set; }
+
         public int NoBisect
         {
             get => noBisect;

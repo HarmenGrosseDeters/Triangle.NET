@@ -95,6 +95,7 @@ namespace TriangleNet.Smoothing
 
             // The smoother should respect the mesh segment splitting behavior.
             options.SegmentSplitting = smoothedMesh.behavior.NoBisect;
+            options.CanSplitSegment = smoothedMesh.behavior.CanSplitSegment;
 
             // The maximum distances moved from any site at the previous and
             // current iterations.
