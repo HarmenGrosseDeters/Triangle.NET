@@ -36,5 +36,15 @@ namespace TriangleNet.Meshing
         /// 2 = prevent all segment splitting, including internal boundaries
         /// </remarks>
         public int SegmentSplitting { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether intersecting segments are split at their
+        /// intersection points before they are inserted into the mesh (default = true).
+        /// </summary>
+        /// <remarks>
+        /// Inserting intersecting segments one by one is not robust, since the rounded
+        /// intersection points don't lie exactly on the segments. See <see cref="SegmentNoder"/>.
+        /// </remarks>
+        public bool ResolveIntersections { get; set; } = true;
     }
 }

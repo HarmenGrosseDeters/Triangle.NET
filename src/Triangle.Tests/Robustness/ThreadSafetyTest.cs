@@ -22,8 +22,8 @@ namespace TriangleNet.Tests.Robustness
     /// </remarks>
     public class ThreadSafetyTest
     {
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: critical (for multi-threaded use). Concurrent use of RobustPredicates.Default returns wrong results.")]
+        [Test]
+        [Description("Fixed (severity: critical (for multi-threaded use)). Concurrent use of RobustPredicates.Default returns wrong results.")]
         public void DefaultPredicatesInParallel()
         {
             Assert.That(CountWrongResultsInParallel(() => RobustPredicates.Default), Is.Zero);

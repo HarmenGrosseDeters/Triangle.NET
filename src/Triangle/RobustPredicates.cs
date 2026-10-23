@@ -126,7 +126,6 @@ namespace TriangleNet
         /// </summary>
         public RobustPredicates()
         {
-            AllocateWorkspace();
         }
 
         /// <inheritdoc/>
@@ -736,6 +735,8 @@ namespace TriangleNet
         /// </remarks>
         private double InCircleAdapt(Point pa, Point pb, Point pc, Point pd, double permanent)
         {
+            var w = Workspace.Current;
+
             double adx, bdx, cdx, ady, bdy, cdy;
             double det, errbound;
 
@@ -810,36 +811,36 @@ namespace TriangleNet
             cdxbdy1 = (double)(cdx * bdy); c = (double)(splitter * cdx); abig = (double)(c - cdx); ahi = c - abig; alo = cdx - ahi; c = (double)(splitter * bdy); abig = (double)(c - bdy); bhi = c - abig; blo = bdy - bhi; err1 = cdxbdy1 - (ahi * bhi); err2 = err1 - (alo * bhi); err3 = err2 - (ahi * blo); cdxbdy0 = (alo * blo) - err3;
             _i = (double)(bdxcdy0 - cdxbdy0); bvirt = (double)(bdxcdy0 - _i); avirt = _i + bvirt; bround = bvirt - cdxbdy0; around = bdxcdy0 - avirt; bc[0] = around + bround; _j = (double)(bdxcdy1 + _i); bvirt = (double)(_j - bdxcdy1); avirt = _j - bvirt; bround = _i - bvirt; around = bdxcdy1 - avirt; _0 = around + bround; _i = (double)(_0 - cdxbdy1); bvirt = (double)(_0 - _i); avirt = _i + bvirt; bround = bvirt - cdxbdy1; around = _0 - avirt; bc[1] = around + bround; bc3 = (double)(_j + _i); bvirt = (double)(bc3 - _j); avirt = bc3 - bvirt; bround = _i - bvirt; around = _j - avirt; bc[2] = around + bround;
             bc[3] = bc3;
-            axbclen = ScaleExpansionZeroElim(4, bc, adx, axbc);
-            axxbclen = ScaleExpansionZeroElim(axbclen, axbc, adx, axxbc);
-            aybclen = ScaleExpansionZeroElim(4, bc, ady, aybc);
-            ayybclen = ScaleExpansionZeroElim(aybclen, aybc, ady, ayybc);
-            alen = FastExpansionSumZeroElim(axxbclen, axxbc, ayybclen, ayybc, adet);
+            axbclen = ScaleExpansionZeroElim(4, bc, adx, w.axbc);
+            axxbclen = ScaleExpansionZeroElim(axbclen, w.axbc, adx, w.axxbc);
+            aybclen = ScaleExpansionZeroElim(4, bc, ady, w.aybc);
+            ayybclen = ScaleExpansionZeroElim(aybclen, w.aybc, ady, w.ayybc);
+            alen = FastExpansionSumZeroElim(axxbclen, w.axxbc, ayybclen, w.ayybc, w.adet);
 
             cdxady1 = (double)(cdx * ady); c = (double)(splitter * cdx); abig = (double)(c - cdx); ahi = c - abig; alo = cdx - ahi; c = (double)(splitter * ady); abig = (double)(c - ady); bhi = c - abig; blo = ady - bhi; err1 = cdxady1 - (ahi * bhi); err2 = err1 - (alo * bhi); err3 = err2 - (ahi * blo); cdxady0 = (alo * blo) - err3;
             adxcdy1 = (double)(adx * cdy); c = (double)(splitter * adx); abig = (double)(c - adx); ahi = c - abig; alo = adx - ahi; c = (double)(splitter * cdy); abig = (double)(c - cdy); bhi = c - abig; blo = cdy - bhi; err1 = adxcdy1 - (ahi * bhi); err2 = err1 - (alo * bhi); err3 = err2 - (ahi * blo); adxcdy0 = (alo * blo) - err3;
             _i = (double)(cdxady0 - adxcdy0); bvirt = (double)(cdxady0 - _i); avirt = _i + bvirt; bround = bvirt - adxcdy0; around = cdxady0 - avirt; ca[0] = around + bround; _j = (double)(cdxady1 + _i); bvirt = (double)(_j - cdxady1); avirt = _j - bvirt; bround = _i - bvirt; around = cdxady1 - avirt; _0 = around + bround; _i = (double)(_0 - adxcdy1); bvirt = (double)(_0 - _i); avirt = _i + bvirt; bround = bvirt - adxcdy1; around = _0 - avirt; ca[1] = around + bround; ca3 = (double)(_j + _i); bvirt = (double)(ca3 - _j); avirt = ca3 - bvirt; bround = _i - bvirt; around = _j - avirt; ca[2] = around + bround;
             ca[3] = ca3;
-            bxcalen = ScaleExpansionZeroElim(4, ca, bdx, bxca);
-            bxxcalen = ScaleExpansionZeroElim(bxcalen, bxca, bdx, bxxca);
-            bycalen = ScaleExpansionZeroElim(4, ca, bdy, byca);
-            byycalen = ScaleExpansionZeroElim(bycalen, byca, bdy, byyca);
-            blen = FastExpansionSumZeroElim(bxxcalen, bxxca, byycalen, byyca, bdet);
+            bxcalen = ScaleExpansionZeroElim(4, ca, bdx, w.bxca);
+            bxxcalen = ScaleExpansionZeroElim(bxcalen, w.bxca, bdx, w.bxxca);
+            bycalen = ScaleExpansionZeroElim(4, ca, bdy, w.byca);
+            byycalen = ScaleExpansionZeroElim(bycalen, w.byca, bdy, w.byyca);
+            blen = FastExpansionSumZeroElim(bxxcalen, w.bxxca, byycalen, w.byyca, w.bdet);
 
             adxbdy1 = (double)(adx * bdy); c = (double)(splitter * adx); abig = (double)(c - adx); ahi = c - abig; alo = adx - ahi; c = (double)(splitter * bdy); abig = (double)(c - bdy); bhi = c - abig; blo = bdy - bhi; err1 = adxbdy1 - (ahi * bhi); err2 = err1 - (alo * bhi); err3 = err2 - (ahi * blo); adxbdy0 = (alo * blo) - err3;
             bdxady1 = (double)(bdx * ady); c = (double)(splitter * bdx); abig = (double)(c - bdx); ahi = c - abig; alo = bdx - ahi; c = (double)(splitter * ady); abig = (double)(c - ady); bhi = c - abig; blo = ady - bhi; err1 = bdxady1 - (ahi * bhi); err2 = err1 - (alo * bhi); err3 = err2 - (ahi * blo); bdxady0 = (alo * blo) - err3;
             _i = (double)(adxbdy0 - bdxady0); bvirt = (double)(adxbdy0 - _i); avirt = _i + bvirt; bround = bvirt - bdxady0; around = adxbdy0 - avirt; ab[0] = around + bround; _j = (double)(adxbdy1 + _i); bvirt = (double)(_j - adxbdy1); avirt = _j - bvirt; bround = _i - bvirt; around = adxbdy1 - avirt; _0 = around + bround; _i = (double)(_0 - bdxady1); bvirt = (double)(_0 - _i); avirt = _i + bvirt; bround = bvirt - bdxady1; around = _0 - avirt; ab[1] = around + bround; ab3 = (double)(_j + _i); bvirt = (double)(ab3 - _j); avirt = ab3 - bvirt; bround = _i - bvirt; around = _j - avirt; ab[2] = around + bround;
             ab[3] = ab3;
-            cxablen = ScaleExpansionZeroElim(4, ab, cdx, cxab);
-            cxxablen = ScaleExpansionZeroElim(cxablen, cxab, cdx, cxxab);
-            cyablen = ScaleExpansionZeroElim(4, ab, cdy, cyab);
-            cyyablen = ScaleExpansionZeroElim(cyablen, cyab, cdy, cyyab);
-            clen = FastExpansionSumZeroElim(cxxablen, cxxab, cyyablen, cyyab, cdet);
+            cxablen = ScaleExpansionZeroElim(4, ab, cdx, w.cxab);
+            cxxablen = ScaleExpansionZeroElim(cxablen, w.cxab, cdx, w.cxxab);
+            cyablen = ScaleExpansionZeroElim(4, ab, cdy, w.cyab);
+            cyyablen = ScaleExpansionZeroElim(cyablen, w.cyab, cdy, w.cyyab);
+            clen = FastExpansionSumZeroElim(cxxablen, w.cxxab, cyyablen, w.cyyab, w.cdet);
 
-            ablen = FastExpansionSumZeroElim(alen, adet, blen, bdet, abdet);
-            finlength = FastExpansionSumZeroElim(ablen, abdet, clen, cdet, fin1);
+            ablen = FastExpansionSumZeroElim(alen, w.adet, blen, w.bdet, w.abdet);
+            finlength = FastExpansionSumZeroElim(ablen, w.abdet, clen, w.cdet, w.fin1);
 
-            det = Estimate(finlength, fin1);
+            det = Estimate(finlength, w.fin1);
             errbound = iccerrboundB * permanent;
             if ((det >= errbound) || (-det >= errbound))
             {
@@ -870,8 +871,8 @@ namespace TriangleNet
                 return det;
             }
 
-            finnow = fin1;
-            finother = fin2;
+            finnow = w.fin1;
+            finother = w.fin2;
 
             if ((bdxtail != 0.0) || (bdytail != 0.0) || (cdxtail != 0.0) || (cdytail != 0.0))
             {
@@ -898,97 +899,97 @@ namespace TriangleNet
             if (adxtail != 0.0)
             {
                 axtbclen = ScaleExpansionZeroElim(4, bc, adxtail, axtbc);
-                temp16alen = ScaleExpansionZeroElim(axtbclen, axtbc, 2.0 * adx, temp16a);
+                temp16alen = ScaleExpansionZeroElim(axtbclen, axtbc, 2.0 * adx, w.temp16a);
 
                 axtcclen = ScaleExpansionZeroElim(4, cc, adxtail, axtcc);
-                temp16blen = ScaleExpansionZeroElim(axtcclen, axtcc, bdy, temp16b);
+                temp16blen = ScaleExpansionZeroElim(axtcclen, axtcc, bdy, w.temp16b);
 
                 axtbblen = ScaleExpansionZeroElim(4, bb, adxtail, axtbb);
-                temp16clen = ScaleExpansionZeroElim(axtbblen, axtbb, -cdy, temp16c);
+                temp16clen = ScaleExpansionZeroElim(axtbblen, axtbb, -cdy, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
             if (adytail != 0.0)
             {
                 aytbclen = ScaleExpansionZeroElim(4, bc, adytail, aytbc);
-                temp16alen = ScaleExpansionZeroElim(aytbclen, aytbc, 2.0 * ady, temp16a);
+                temp16alen = ScaleExpansionZeroElim(aytbclen, aytbc, 2.0 * ady, w.temp16a);
 
                 aytbblen = ScaleExpansionZeroElim(4, bb, adytail, aytbb);
-                temp16blen = ScaleExpansionZeroElim(aytbblen, aytbb, cdx, temp16b);
+                temp16blen = ScaleExpansionZeroElim(aytbblen, aytbb, cdx, w.temp16b);
 
                 aytcclen = ScaleExpansionZeroElim(4, cc, adytail, aytcc);
-                temp16clen = ScaleExpansionZeroElim(aytcclen, aytcc, -bdx, temp16c);
+                temp16clen = ScaleExpansionZeroElim(aytcclen, aytcc, -bdx, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
             if (bdxtail != 0.0)
             {
                 bxtcalen = ScaleExpansionZeroElim(4, ca, bdxtail, bxtca);
-                temp16alen = ScaleExpansionZeroElim(bxtcalen, bxtca, 2.0 * bdx, temp16a);
+                temp16alen = ScaleExpansionZeroElim(bxtcalen, bxtca, 2.0 * bdx, w.temp16a);
 
                 bxtaalen = ScaleExpansionZeroElim(4, aa, bdxtail, bxtaa);
-                temp16blen = ScaleExpansionZeroElim(bxtaalen, bxtaa, cdy, temp16b);
+                temp16blen = ScaleExpansionZeroElim(bxtaalen, bxtaa, cdy, w.temp16b);
 
                 bxtcclen = ScaleExpansionZeroElim(4, cc, bdxtail, bxtcc);
-                temp16clen = ScaleExpansionZeroElim(bxtcclen, bxtcc, -ady, temp16c);
+                temp16clen = ScaleExpansionZeroElim(bxtcclen, bxtcc, -ady, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
             if (bdytail != 0.0)
             {
                 bytcalen = ScaleExpansionZeroElim(4, ca, bdytail, bytca);
-                temp16alen = ScaleExpansionZeroElim(bytcalen, bytca, 2.0 * bdy, temp16a);
+                temp16alen = ScaleExpansionZeroElim(bytcalen, bytca, 2.0 * bdy, w.temp16a);
 
                 bytcclen = ScaleExpansionZeroElim(4, cc, bdytail, bytcc);
-                temp16blen = ScaleExpansionZeroElim(bytcclen, bytcc, adx, temp16b);
+                temp16blen = ScaleExpansionZeroElim(bytcclen, bytcc, adx, w.temp16b);
 
                 bytaalen = ScaleExpansionZeroElim(4, aa, bdytail, bytaa);
-                temp16clen = ScaleExpansionZeroElim(bytaalen, bytaa, -cdx, temp16c);
+                temp16clen = ScaleExpansionZeroElim(bytaalen, bytaa, -cdx, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
             if (cdxtail != 0.0)
             {
                 cxtablen = ScaleExpansionZeroElim(4, ab, cdxtail, cxtab);
-                temp16alen = ScaleExpansionZeroElim(cxtablen, cxtab, 2.0 * cdx, temp16a);
+                temp16alen = ScaleExpansionZeroElim(cxtablen, cxtab, 2.0 * cdx, w.temp16a);
 
                 cxtbblen = ScaleExpansionZeroElim(4, bb, cdxtail, cxtbb);
-                temp16blen = ScaleExpansionZeroElim(cxtbblen, cxtbb, ady, temp16b);
+                temp16blen = ScaleExpansionZeroElim(cxtbblen, cxtbb, ady, w.temp16b);
 
                 cxtaalen = ScaleExpansionZeroElim(4, aa, cdxtail, cxtaa);
-                temp16clen = ScaleExpansionZeroElim(cxtaalen, cxtaa, -bdy, temp16c);
+                temp16clen = ScaleExpansionZeroElim(cxtaalen, cxtaa, -bdy, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
             if (cdytail != 0.0)
             {
                 cytablen = ScaleExpansionZeroElim(4, ab, cdytail, cytab);
-                temp16alen = ScaleExpansionZeroElim(cytablen, cytab, 2.0 * cdy, temp16a);
+                temp16alen = ScaleExpansionZeroElim(cytablen, cytab, 2.0 * cdy, w.temp16a);
 
                 cytaalen = ScaleExpansionZeroElim(4, aa, cdytail, cytaa);
-                temp16blen = ScaleExpansionZeroElim(cytaalen, cytaa, bdx, temp16b);
+                temp16blen = ScaleExpansionZeroElim(cytaalen, cytaa, bdx, w.temp16b);
 
                 cytbblen = ScaleExpansionZeroElim(4, bb, cdytail, cytbb);
-                temp16clen = ScaleExpansionZeroElim(cytbblen, cytbb, -adx, temp16c);
+                temp16clen = ScaleExpansionZeroElim(cytbblen, cytbb, -adx, w.temp16c);
 
-                temp32alen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32a);
-                temp48len = FastExpansionSumZeroElim(temp16clen, temp16c, temp32alen, temp32a, temp48);
-                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                temp32alen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32a);
+                temp48len = FastExpansionSumZeroElim(temp16clen, w.temp16c, temp32alen, w.temp32a, w.temp48);
+                finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                 finswap = finnow; finnow = finother; finother = finswap;
             }
 
@@ -1025,53 +1026,53 @@ namespace TriangleNet
 
                 if (adxtail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(axtbclen, axtbc, adxtail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(axtbclen, axtbc, adxtail, w.temp16a);
                     axtbctlen = ScaleExpansionZeroElim(bctlen, bct, adxtail, axtbct);
-                    temp32alen = ScaleExpansionZeroElim(axtbctlen, axtbct, 2.0 * adx, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(axtbctlen, axtbct, 2.0 * adx, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                     if (bdytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, cc, adxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, bdytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, cc, adxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, bdytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
                     if (cdytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, bb, -adxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, cdytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, bb, -adxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, cdytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
 
-                    temp32alen = ScaleExpansionZeroElim(axtbctlen, axtbct, adxtail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(axtbctlen, axtbct, adxtail, w.temp32a);
                     axtbcttlen = ScaleExpansionZeroElim(bcttlen, bctt, adxtail, axtbctt);
-                    temp16alen = ScaleExpansionZeroElim(axtbcttlen, axtbctt, 2.0 * adx, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(axtbcttlen, axtbctt, adxtail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(axtbcttlen, axtbctt, 2.0 * adx, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(axtbcttlen, axtbctt, adxtail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
                 if (adytail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(aytbclen, aytbc, adytail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(aytbclen, aytbc, adytail, w.temp16a);
                     aytbctlen = ScaleExpansionZeroElim(bctlen, bct, adytail, aytbct);
-                    temp32alen = ScaleExpansionZeroElim(aytbctlen, aytbct, 2.0 * ady, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(aytbctlen, aytbct, 2.0 * ady, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
 
 
-                    temp32alen = ScaleExpansionZeroElim(aytbctlen, aytbct, adytail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(aytbctlen, aytbct, adytail, w.temp32a);
                     aytbcttlen = ScaleExpansionZeroElim(bcttlen, bctt, adytail, aytbctt);
-                    temp16alen = ScaleExpansionZeroElim(aytbcttlen, aytbctt, 2.0 * ady, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(aytbcttlen, aytbctt, adytail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(aytbcttlen, aytbctt, 2.0 * ady, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(aytbcttlen, aytbctt, adytail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
             }
@@ -1108,52 +1109,52 @@ namespace TriangleNet
 
                 if (bdxtail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(bxtcalen, bxtca, bdxtail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(bxtcalen, bxtca, bdxtail, w.temp16a);
                     bxtcatlen = ScaleExpansionZeroElim(catlen, cat, bdxtail, bxtcat);
-                    temp32alen = ScaleExpansionZeroElim(bxtcatlen, bxtcat, 2.0 * bdx, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(bxtcatlen, bxtcat, 2.0 * bdx, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                     if (cdytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, aa, bdxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, cdytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, aa, bdxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, cdytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
                     if (adytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, cc, -bdxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, adytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, cc, -bdxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, adytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
 
-                    temp32alen = ScaleExpansionZeroElim(bxtcatlen, bxtcat, bdxtail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(bxtcatlen, bxtcat, bdxtail, w.temp32a);
                     bxtcattlen = ScaleExpansionZeroElim(cattlen, catt, bdxtail, bxtcatt);
-                    temp16alen = ScaleExpansionZeroElim(bxtcattlen, bxtcatt, 2.0 * bdx, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(bxtcattlen, bxtcatt, bdxtail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(bxtcattlen, bxtcatt, 2.0 * bdx, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(bxtcattlen, bxtcatt, bdxtail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
                 if (bdytail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(bytcalen, bytca, bdytail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(bytcalen, bytca, bdytail, w.temp16a);
                     bytcatlen = ScaleExpansionZeroElim(catlen, cat, bdytail, bytcat);
-                    temp32alen = ScaleExpansionZeroElim(bytcatlen, bytcat, 2.0 * bdy, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(bytcatlen, bytcat, 2.0 * bdy, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
 
-                    temp32alen = ScaleExpansionZeroElim(bytcatlen, bytcat, bdytail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(bytcatlen, bytcat, bdytail, w.temp32a);
                     bytcattlen = ScaleExpansionZeroElim(cattlen, catt, bdytail, bytcatt);
-                    temp16alen = ScaleExpansionZeroElim(bytcattlen, bytcatt, 2.0 * bdy, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(bytcattlen, bytcatt, bdytail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(bytcattlen, bytcatt, 2.0 * bdy, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(bytcattlen, bytcatt, bdytail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
             }
@@ -1190,53 +1191,53 @@ namespace TriangleNet
 
                 if (cdxtail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(cxtablen, cxtab, cdxtail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(cxtablen, cxtab, cdxtail, w.temp16a);
                     cxtabtlen = ScaleExpansionZeroElim(abtlen, abt, cdxtail, cxtabt);
-                    temp32alen = ScaleExpansionZeroElim(cxtabtlen, cxtabt, 2.0 * cdx, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(cxtabtlen, cxtabt, 2.0 * cdx, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                     if (adytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, bb, cdxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, adytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, bb, cdxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, adytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
                     if (bdytail != 0.0)
                     {
-                        temp8len = ScaleExpansionZeroElim(4, aa, -cdxtail, temp8);
-                        temp16alen = ScaleExpansionZeroElim(temp8len, temp8, bdytail, temp16a);
-                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, temp16a, finother);
+                        temp8len = ScaleExpansionZeroElim(4, aa, -cdxtail, w.temp8);
+                        temp16alen = ScaleExpansionZeroElim(temp8len, w.temp8, bdytail, w.temp16a);
+                        finlength = FastExpansionSumZeroElim(finlength, finnow, temp16alen, w.temp16a, finother);
                         finswap = finnow; finnow = finother; finother = finswap;
                     }
 
-                    temp32alen = ScaleExpansionZeroElim(cxtabtlen, cxtabt, cdxtail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(cxtabtlen, cxtabt, cdxtail, w.temp32a);
                     cxtabttlen = ScaleExpansionZeroElim(abttlen, abtt, cdxtail, cxtabtt);
-                    temp16alen = ScaleExpansionZeroElim(cxtabttlen, cxtabtt, 2.0 * cdx, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(cxtabttlen, cxtabtt, cdxtail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(cxtabttlen, cxtabtt, 2.0 * cdx, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(cxtabttlen, cxtabtt, cdxtail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
                 if (cdytail != 0.0)
                 {
-                    temp16alen = ScaleExpansionZeroElim(cytablen, cytab, cdytail, temp16a);
+                    temp16alen = ScaleExpansionZeroElim(cytablen, cytab, cdytail, w.temp16a);
                     cytabtlen = ScaleExpansionZeroElim(abtlen, abt, cdytail, cytabt);
-                    temp32alen = ScaleExpansionZeroElim(cytabtlen, cytabt, 2.0 * cdy, temp32a);
-                    temp48len = FastExpansionSumZeroElim(temp16alen, temp16a, temp32alen, temp32a, temp48);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, temp48, finother);
+                    temp32alen = ScaleExpansionZeroElim(cytabtlen, cytabt, 2.0 * cdy, w.temp32a);
+                    temp48len = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp32alen, w.temp32a, w.temp48);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp48len, w.temp48, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
 
 
-                    temp32alen = ScaleExpansionZeroElim(cytabtlen, cytabt, cdytail, temp32a);
+                    temp32alen = ScaleExpansionZeroElim(cytabtlen, cytabt, cdytail, w.temp32a);
                     cytabttlen = ScaleExpansionZeroElim(abttlen, abtt, cdytail, cytabtt);
-                    temp16alen = ScaleExpansionZeroElim(cytabttlen, cytabtt, 2.0 * cdy, temp16a);
-                    temp16blen = ScaleExpansionZeroElim(cytabttlen, cytabtt, cdytail, temp16b);
-                    temp32blen = FastExpansionSumZeroElim(temp16alen, temp16a, temp16blen, temp16b, temp32b);
-                    temp64len = FastExpansionSumZeroElim(temp32alen, temp32a, temp32blen, temp32b, temp64);
-                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, temp64, finother);
+                    temp16alen = ScaleExpansionZeroElim(cytabttlen, cytabtt, 2.0 * cdy, w.temp16a);
+                    temp16blen = ScaleExpansionZeroElim(cytabttlen, cytabtt, cdytail, w.temp16b);
+                    temp32blen = FastExpansionSumZeroElim(temp16alen, w.temp16a, temp16blen, w.temp16b, w.temp32b);
+                    temp64len = FastExpansionSumZeroElim(temp32alen, w.temp32a, temp32blen, w.temp32b, w.temp64);
+                    finlength = FastExpansionSumZeroElim(finlength, finnow, temp64len, w.temp64, finother);
                     finswap = finnow; finnow = finother; finother = finswap;
                 }
             }
@@ -1246,53 +1247,25 @@ namespace TriangleNet
 
         #region Workspace
 
-        // InCircleAdapt workspace:
-        double[] fin1, fin2, abdet;
-
-        double[] axbc, axxbc, aybc, ayybc, adet;
-        double[] bxca, bxxca, byca, byyca, bdet;
-        double[] cxab, cxxab, cyab, cyyab, cdet;
-
-        double[] temp8, temp16a, temp16b, temp16c;
-        double[] temp32a, temp32b, temp48, temp64;
-
-        private void AllocateWorkspace()
+        /// <summary>
+        /// Workspace of the InCircleAdapt method. The workspace is thread-local, so a
+        /// single <see cref="RobustPredicates"/> instance can be used from multiple threads.
+        /// </summary>
+        private sealed class Workspace
         {
-            fin1 = new double[1152];
-            fin2 = new double[1152];
-            abdet = new double[64];
+            [ThreadStatic]
+            private static Workspace current;
 
-            axbc = new double[8];
-            axxbc = new double[16];
-            aybc = new double[8];
-            ayybc = new double[16];
-            adet = new double[32];
+            public static Workspace Current => current ?? (current = new Workspace());
 
-            bxca = new double[8];
-            bxxca = new double[16];
-            byca = new double[8];
-            byyca = new double[16];
-            bdet = new double[32];
+            public readonly double[] fin1 = new double[1152], fin2 = new double[1152], abdet = new double[64];
 
-            cxab = new double[8];
-            cxxab = new double[16];
-            cyab = new double[8];
-            cyyab = new double[16];
-            cdet = new double[32];
+            public readonly double[] axbc = new double[8], axxbc = new double[16], aybc = new double[8], ayybc = new double[16], adet = new double[32];
+            public readonly double[] bxca = new double[8], bxxca = new double[16], byca = new double[8], byyca = new double[16], bdet = new double[32];
+            public readonly double[] cxab = new double[8], cxxab = new double[16], cyab = new double[8], cyyab = new double[16], cdet = new double[32];
 
-            temp8 = new double[8];
-            temp16a = new double[16];
-            temp16b = new double[16];
-            temp16c = new double[16];
-
-            temp32a = new double[32];
-            temp32b = new double[32];
-            temp48 = new double[48];
-            temp64 = new double[64];
-        }
-
-        private void ClearWorkspace()
-        {
+            public readonly double[] temp8 = new double[8], temp16a = new double[16], temp16b = new double[16], temp16c = new double[16];
+            public readonly double[] temp32a = new double[32], temp32b = new double[32], temp48 = new double[48], temp64 = new double[64];
         }
 
         #endregion

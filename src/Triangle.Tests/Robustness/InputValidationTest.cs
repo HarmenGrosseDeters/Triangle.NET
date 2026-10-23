@@ -13,8 +13,8 @@ namespace TriangleNet.Tests.Robustness
     /// </summary>
     public class InputValidationTest
     {
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: medium. NaN coordinates cause an IndexOutOfRangeException deep inside RobustPredicates.")]
+        [Test]
+        [Description("Fixed (severity: medium). NaN coordinates cause an IndexOutOfRangeException deep inside RobustPredicates.")]
         public void NaNCoordinate()
         {
             var poly = new Polygon();
@@ -24,8 +24,8 @@ namespace TriangleNet.Tests.Robustness
             Assert.Throws<ArgumentException>(() => poly.Triangulate());
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: medium. Infinite coordinates cause an IndexOutOfRangeException deep inside RobustPredicates.")]
+        [Test]
+        [Description("Fixed (severity: medium). Infinite coordinates cause an IndexOutOfRangeException deep inside RobustPredicates.")]
         public void InfiniteCoordinate()
         {
             var poly = new Polygon();
@@ -35,8 +35,8 @@ namespace TriangleNet.Tests.Robustness
             Assert.Throws<ArgumentException>(() => poly.Triangulate());
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: medium. Mesh.TransferNodes assumes all ids are distinct if the first two are. Otherwise: 'An item with the same key has already been added'.")]
+        [Test]
+        [Description("Fixed (severity: medium). Mesh.TransferNodes assumes all ids are distinct if the first two are. Otherwise: 'An item with the same key has already been added'.")]
         public void PartiallyDuplicateUserIds()
         {
             var points = new List<Vertex>
@@ -53,8 +53,8 @@ namespace TriangleNet.Tests.Robustness
             MeshAssert.HasArea(mesh, 1.0);
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: medium. Re-triangulating the vertices of an existing mesh plus a new vertex fails, because the new vertex has id 0 which is already in use.")]
+        [Test]
+        [Description("Fixed (severity: medium). Re-triangulating the vertices of an existing mesh plus a new vertex fails, because the new vertex has id 0 which is already in use.")]
         public void ReuseMeshVerticesAndAddVertex()
         {
             var poly = new Polygon();
@@ -70,15 +70,15 @@ namespace TriangleNet.Tests.Robustness
             Assert.That(mesh.Vertices.Count, Is.EqualTo(5));
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: high. Dwyer (the default triangulator) recurses infinitely if all points are identical (StackOverflowException kills the process).")]
+        [Test]
+        [Description("Fixed (severity: high). Dwyer (the default triangulator) recurses infinitely if all points are identical (StackOverflowException kills the process).")]
         public void AllPointsIdenticalDwyer()
         {
             IsolatedProcess.AssertSucceeds(nameof(IsolatedScenarios.DwyerAllPointsIdentical));
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: low. SweepLine throws if all points are identical, while Incremental returns an empty mesh (and all algorithms return an empty mesh for collinear input).")]
+        [Test]
+        [Description("Fixed (severity: low). SweepLine throws if all points are identical, while Incremental returns an empty mesh (and all algorithms return an empty mesh for collinear input).")]
         public void AllPointsIdenticalSweepLine()
         {
             var points = Enumerable.Range(0, 5).Select(_ => new Vertex(1, 1)).ToList();

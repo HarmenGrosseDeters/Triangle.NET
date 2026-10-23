@@ -106,6 +106,13 @@ namespace TriangleNet.Meshing.Algorithm
                 }
             }
             i++;
+
+            if (i < 2)
+            {
+                // All input vertices are identical, so there is no triangulation.
+                return mesh;
+            }
+
             if (UseDwyer)
             {
                 // Re-sort the array of vertices to accommodate alternating cuts.

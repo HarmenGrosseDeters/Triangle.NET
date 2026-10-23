@@ -720,7 +720,7 @@ namespace TriangleNet.Meshing
             Point newloc; // Location of the new vertex
             double xi = 0, eta = 0;
             InsertVertexResult success;
-            bool errorflag;
+            bool errorflag = false;
 
             badotri = badtri.poortri;
             borg = badotri.Org();
@@ -733,101 +733,130 @@ namespace TriangleNet.Meshing
             if (!Otri.IsDead(badotri.tri) && (borg == badtri.org) &&
                 (bdest == badtri.dest) && (bapex == badtri.apex))
             {
-                errorflag = false;
-                // Create a new vertex at the triangle's circumcenter.
-                if (enableAcute)
+                // If the aCute location coincides with an existing vertex, fall back to
+                // the circumcenter (classic Delaunay refinement).
+                for (int attempt = 0; attempt < 2; attempt++)
                 {
-                    newloc = newLocation.FindLocation(borg, bdest, bapex, ref xi, ref eta, true, badotri);
-                }
-                else
-                {
-                    newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
-                }
+                    bool useAcute = enableAcute && attempt == 0;
 
-                // Check whether the new vertex lies on a triangle vertex.
-                if (((newloc.x == borg.x) && (newloc.y == borg.y)) ||
-                    ((newloc.x == bdest.x) && (newloc.y == bdest.y)) ||
-                    ((newloc.x == bapex.x) && (newloc.y == bapex.y)))
-                {
-                    if (Log.Verbose)
+                    if (attempt > 0)
                     {
-                        logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
-                    }
-                    errorflag = true;
-                }
-                else
-                {
-                    // The new vertex must be in the interior, and therefore is a
-                    // free vertex with a marker of zero.
-                    Vertex newvertex = new Vertex(newloc.x, newloc.y, 0
-#if USE_ATTRIBS
-                        , mesh.nextras
-#endif
-                        );
-
-                    newvertex.type = VertexType.FreeVertex;
-
-                    // Ensure that the handle 'badotri' does not represent the longest
-                    // edge of the triangle.  This ensures that the circumcenter must
-                    // fall to the left of this edge, so point location will work.
-                    // (If the angle org-apex-dest exceeds 90 degrees, then the
-                    // circumcenter lies outside the org-dest edge, and eta is
-                    // negative.  Roundoff error might prevent eta from being
-                    // negative when it should be, so I test eta against xi.)
-                    if (eta < xi)
-                    {
-                        badotri.Lprev();
-                    }
-
-                    // Assign triangle for attributes interpolation.
-                    newvertex.tri.tri = newvertex_tri;
-
-                    // Insert the circumcenter, searching from the edge of the triangle,
-                    // and maintain the Delaunay property of the triangulation.
-                    Osub tmp = default(Osub);
-                    success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
-
-                    if (success == InsertVertexResult.Successful)
-                    {
-                        newvertex.hash = mesh.hash_vtx++;
-                        newvertex.id = newvertex.hash;
-#if USE_ATTRIBS
-                        if (mesh.nextras > 0)
+                        if (!errorflag || !enableAcute)
                         {
-                            Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
+                            break;
                         }
-#endif
-#if USE_Z
-                        Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
-#endif
-                        mesh.vertices.Add(newvertex.hash, newvertex);
 
-                        if (mesh.steinerleft > 0)
-                        {
-                            mesh.steinerleft--;
-                        }
+                        // A failed insertion might have moved the handle.
+                        badotri = badtri.poortri;
                     }
-                    else if (success == InsertVertexResult.Encroaching)
+
+                    errorflag = false;
+                    // Create a new vertex at the triangle's circumcenter.
+                    if (useAcute)
                     {
-                        // If the newly inserted vertex encroaches upon a subsegment,
-                        // delete the new vertex.
-                        mesh.UndoVertex();
-                    }
-                    else if (success == InsertVertexResult.Violating)
-                    {
-                        // Failed to insert the new vertex, but some subsegment was
-                        // marked as being encroached.
+                        newloc = newLocation.FindLocation(borg, bdest, bapex, ref xi, ref eta, true, badotri);
                     }
                     else
-                    {   // success == DUPLICATEVERTEX
-                        // Couldn't insert the new vertex because a vertex is already there.
+                    {
+                        newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
+                    }
+
+                    // Check whether the new vertex lies on a triangle vertex.
+                    if (((newloc.x == borg.x) && (newloc.y == borg.y)) ||
+                        ((newloc.x == bdest.x) && (newloc.y == bdest.y)) ||
+                        ((newloc.x == bapex.x) && (newloc.y == bapex.y)))
+                    {
                         if (Log.Verbose)
                         {
                             logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
                         }
                         errorflag = true;
                     }
+                    else
+                    {
+                        // The new vertex must be in the interior, and therefore is a
+                        // free vertex with a marker of zero.
+                        Vertex newvertex = new Vertex(newloc.x, newloc.y, 0
+    #if USE_ATTRIBS
+                            , mesh.nextras
+    #endif
+                            );
+
+                        newvertex.type = VertexType.FreeVertex;
+
+                        // Ensure that the handle 'badotri' does not represent the longest
+                        // edge of the triangle.  This ensures that the circumcenter must
+                        // fall to the left of this edge, so point location will work.
+                        // (If the angle org-apex-dest exceeds 90 degrees, then the
+                        // circumcenter lies outside the org-dest edge, and eta is
+                        // negative.  Roundoff error might prevent eta from being
+                        // negative when it should be, so I test eta against xi.)
+                        if (useAcute)
+                        {
+                            // The aCute location isn't necessarily the circumcenter and might
+                            // lie outside the triangle, so xi and eta can't be used. Point
+                            // location requires the new vertex to lie to the left of the edge.
+                            for (int i = 0; i < 2 && predicates.CounterClockwise(badotri.Org(), badotri.Dest(), newloc) <= 0.0; i++)
+                            {
+                                badotri.Lnext();
+                            }
+                        }
+                        else if (eta < xi)
+                        {
+                            badotri.Lprev();
+                        }
+
+                        // Assign triangle for attributes interpolation.
+                        newvertex.tri.tri = newvertex_tri;
+
+                        // Insert the circumcenter, searching from the edge of the triangle,
+                        // and maintain the Delaunay property of the triangulation.
+                        Osub tmp = default(Osub);
+                        success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
+
+                        if (success == InsertVertexResult.Successful)
+                        {
+                            newvertex.hash = mesh.hash_vtx++;
+                            newvertex.id = newvertex.hash;
+    #if USE_ATTRIBS
+                            if (mesh.nextras > 0)
+                            {
+                                Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
+                            }
+    #endif
+    #if USE_Z
+                            Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
+    #endif
+                            mesh.vertices.Add(newvertex.hash, newvertex);
+
+                            if (mesh.steinerleft > 0)
+                            {
+                                mesh.steinerleft--;
+                            }
+                        }
+                        else if (success == InsertVertexResult.Encroaching)
+                        {
+                            // If the newly inserted vertex encroaches upon a subsegment,
+                            // delete the new vertex.
+                            mesh.UndoVertex();
+                        }
+                        else if (success == InsertVertexResult.Violating)
+                        {
+                            // Failed to insert the new vertex, but some subsegment was
+                            // marked as being encroached.
+                        }
+                        else
+                        {   // success == DUPLICATEVERTEX
+                            // Couldn't insert the new vertex because a vertex is already there.
+                            if (Log.Verbose)
+                            {
+                                logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
+                            }
+                            errorflag = true;
+                        }
+                    }
                 }
+
                 if (errorflag)
                 {
                     logger.Error("The new vertex is at the circumcenter of triangle: This probably "

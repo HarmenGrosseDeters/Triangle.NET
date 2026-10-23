@@ -173,22 +173,34 @@ namespace TriangleNet.Smoothing
 
             Point p, q;
 
+            // Use coordinates relative to the generator to avoid catastrophic
+            // cancellation for meshes located far away from the origin.
+            double ox = face.generator.x;
+            double oy = face.generator.y;
+
+            double px, py, qx, qy;
+
             do
             {
                 p = edge.Origin;
                 q = edge.Twin.Origin;
 
-                ai = p.x * q.y - q.x * p.y;
+                px = p.x - ox;
+                py = p.y - oy;
+                qx = q.x - ox;
+                qy = q.y - oy;
+
+                ai = px * qy - qx * py;
                 atmp += ai;
-                xtmp += (q.x + p.x) * ai;
-                ytmp += (q.y + p.y) * ai;
+                xtmp += (qx + px) * ai;
+                ytmp += (qy + py) * ai;
 
                 edge = edge.Next;
 
             } while (edge.Next.ID != first);
 
-            x = xtmp / (3 * atmp);
-            y = ytmp / (3 * atmp);
+            x = ox + xtmp / (3 * atmp);
+            y = oy + ytmp / (3 * atmp);
 
             //area = atmp / 2;
         }

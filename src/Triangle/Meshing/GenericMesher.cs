@@ -114,6 +114,12 @@ namespace TriangleNet.Meshing
         /// <returns>The mesh.</returns>
         public IMesh Triangulate(IPolygon polygon, ConstraintOptions options, QualityOptions quality, CancellationToken cancellationToken = default)
         {
+            if (options?.ResolveIntersections ?? true)
+            {
+                // Split intersecting segments in advance.
+                polygon = SegmentNoder.Node(polygon, config.Predicates());
+            }
+
             var mesh = (Mesh)triangulator.Triangulate(polygon.Points, config);
 
             var cmesher = new ConstraintMesher(mesh, config);

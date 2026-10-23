@@ -119,7 +119,7 @@ namespace TriangleNet.Geometry
 
         #endregion
 
-        /// <inheritdoc />
-        public override int GetHashCode() => hash;
+        // NOTE: GetHashCode isn't overridden, so the coordinate based hash code of the
+        //       Point class is used, which is consistent with Point.Equals.
     }
 }

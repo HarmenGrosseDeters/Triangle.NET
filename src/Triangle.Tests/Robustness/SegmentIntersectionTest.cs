@@ -18,8 +18,8 @@ namespace TriangleNet.Tests.Robustness
     /// </remarks>
     public class SegmentIntersectionTest
     {
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: high. Three crossing segments throw 'Topological inconsistency after splitting a segment'.")]
+        [Test]
+        [Description("Fixed (severity: high). Three crossing segments throw 'Topological inconsistency after splitting a segment'.")]
         public void ThreeCrossingSegmentsThrow()
         {
             var poly = TestData.SquareWithSegments((9, 5, 5, 7), (7, 7, 4, 1), (6, 5, 3, 10));
@@ -31,8 +31,8 @@ namespace TriangleNet.Tests.Robustness
             MeshAssert.HasArea(mesh, 100);
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: critical. Three crossing segments silently produce a mesh with inverted triangles (no exception).")]
+        [Test]
+        [Description("Fixed (severity: critical). Three crossing segments silently produce a mesh with inverted triangles (no exception).")]
         [TestCase(2, 4, 4, 8, 1, 5, 6, 6, 1, 7, 5, 3)]
         [TestCase(2, 5, 9, 5, 6, 3, 10, 10, 8, 7, 5, 0)]
         [TestCase(5, 0, 1, 10, 7, 7, 0, 7, 3, 3, 8, 8)]
@@ -50,15 +50,15 @@ namespace TriangleNet.Tests.Robustness
             MeshAssert.HasArea(mesh, 100);
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: critical. Five crossing segments cause an infinite recursion (StackOverflowException kills the process).")]
+        [Test]
+        [Description("Fixed (severity: critical). Five crossing segments cause an infinite recursion (StackOverflowException kills the process).")]
         public void FiveCrossingSegmentsCrashProcess()
         {
             IsolatedProcess.AssertSucceeds(nameof(IsolatedScenarios.FiveCrossingSegments));
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: high. Fuzzing with random integer segments: about 20% of the inputs fail.")]
+        [Test]
+        [Description("Fixed (severity: high). Fuzzing with random integer segments: about 20% of the inputs fail.")]
         public void RandomIntegerSegments()
         {
             var failures = new List<string>();

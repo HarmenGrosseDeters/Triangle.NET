@@ -394,10 +394,17 @@ namespace TriangleNet
             this.nextras = v.attributes == null ? 0 : v.attributes.Length;
 #endif
 
-            // Simple heuristic to check if ids are already set.  We assume that if the
-            // first two vertex ids are distinct, then all input vertices have pairwise
-            // distinct ids.
-            bool userId = (v.id != points[1].id);
+            foreach (var p in points)
+            {
+                if (double.IsNaN(p.x) || double.IsInfinity(p.x) ||
+                    double.IsNaN(p.y) || double.IsInfinity(p.y))
+                {
+                    throw new ArgumentException("Input vertex (ID " + p.id + ") has a NaN or infinite coordinate.", nameof(points));
+                }
+            }
+
+            // Use the user defined ids only if they are pairwise distinct.
+            bool userId = HasDistinctIds(points);
 
             foreach (var p in points)
             {
@@ -416,6 +423,27 @@ namespace TriangleNet
                 vertices.Add(p.hash, p);
                 bounds.Expand(p);
             }
+        }
+
+        private static bool HasDistinctIds(IList<Vertex> points)
+        {
+            // Fast path: all ids zero (not set by the user).
+            if (points[0].id == points[1].id)
+            {
+                return false;
+            }
+
+            var ids = new HashSet<int>();
+
+            foreach (var p in points)
+            {
+                if (!ids.Add(p.id))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

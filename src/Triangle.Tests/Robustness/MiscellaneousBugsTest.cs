@@ -9,8 +9,8 @@ namespace TriangleNet.Tests.Robustness
 {
     public class MiscellaneousBugsTest
     {
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: high. SimpleSmoother computes cell centroids with absolute coordinates (catastrophic cancellation far from the origin), producing invalid vertices.")]
+        [Test]
+        [Description("Fixed (severity: high). SimpleSmoother computes cell centroids with absolute coordinates (catastrophic cancellation far from the origin), producing invalid vertices.")]
         public void SmoothMeshWithLargeCoordinates()
         {
             IsolatedProcess.AssertSucceeds(nameof(IsolatedScenarios.SmoothMeshWithLargeCoordinates), TimeSpan.FromSeconds(15));
@@ -29,8 +29,8 @@ namespace TriangleNet.Tests.Robustness
             MeshAssert.IsValid(mesh);
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: low. SweepLine output isn't Delaunay for nearly cocircular points (violations of order 1e-16), because the event queue uses inexact circle tops.")]
+        [Test]
+        [Description("Fixed (severity: low). SweepLine output isn't Delaunay for nearly cocircular points (violations of order 1e-16), because the event queue uses inexact circle tops.")]
         public void SweepLineNearlyCocircularPoints([Range(1, 5)] int seed)
         {
             var random = new Random(seed);
@@ -51,7 +51,7 @@ namespace TriangleNet.Tests.Robustness
         [Test]
         public void NearlyCocircularPoints([Values(0.0, 1e6)] double offset)
         {
-            foreach (var triangulator in new ITriangulator[] { new Dwyer(), new Incremental() })
+            foreach (var triangulator in new ITriangulator[] { new Dwyer(), new SweepLine(), new Incremental() })
             {
                 var random = new Random(1);
                 var points = new List<Vertex>();
@@ -69,8 +69,8 @@ namespace TriangleNet.Tests.Robustness
             }
         }
 
-        [Test, Category(KnownBug.Category)]
-        [Description("Severity: medium. Point.Equals compares coordinates, but Vertex.GetHashCode returns the internal hash, so equal vertices have different hash codes (breaks HashSet/Dictionary).")]
+        [Test]
+        [Description("Fixed (severity: medium). Point.Equals compares coordinates, but Vertex.GetHashCode returns the internal hash, so equal vertices have different hash codes (breaks HashSet/Dictionary).")]
         public void VertexEqualsAndHashCodeContract()
         {
             var poly = new Polygon();
