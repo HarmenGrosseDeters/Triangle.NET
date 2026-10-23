@@ -3,6 +3,10 @@
 Stand: Oktober 2026, Commit `fa6f2fd` (master). Fokus: Verhalten bei topologisch unsauberen
 Eingaben und Gleitkomma-Grenzfällen.
 
+> **Update:** Alle Befunde sind inzwischen behoben, siehe [Abschnitt „Fixes“](#fixes). Die
+> Analyse unten beschreibt den Zustand **vor** den Fixes. Die Bewertung des alten,
+> angepassten Stands steht in [Alter-Stand-Bewertung.md](Alter-Stand-Bewertung.md).
+
 ## Kurzfazit
 
 * **Die reine Delaunay-Triangulation von Punktmengen ist sehr robust.** Die adaptiven exakten
@@ -151,11 +155,42 @@ paralleles Vermaschen mit eigenen Prädikaten.
    abwarten.
 8. **Default-Algorithmus Dwyer beibehalten.** Er ist exakt Delaunay; SweepLine ist es nicht.
 
+## Fixes
+
+| # | Fix | Datei |
+|---|-----|-------|
+| 1–3 | **Noding mit Snapping** vor dem Einfügen der Segmente (`ConstraintOptions.ResolveIntersections`, Standard an): alle Schnittpunkte werden vorab berechnet (exakte Kreuzungserkennung), neue Punkte näher als r ≈ 1e-12 · Ausdehnung an einem bestehenden Punkt werden mit ihm verschmolzen, und Punkte näher als r an einem Segment werden ins Segment eingebunden. Eingabepunkte werden nie verschoben. Das Verfahren terminiert nachweisbar, weil neue Punkte einen Mindestabstand haben. | `Meshing/SegmentNoder.cs` |
+| 1–3 | **Sicherheitsnetz:** `ScoutSegment`/`ConstrainedEdge` als Schleife statt Rekursion (kein StackOverflow), Schrittzähler gegen Endlosschleifen, Orientierungsprüfung nach dem Einfügen von Schnittpunkten. Ungültige Netze werden damit nie still zurückgegeben. | `Meshing/ConstraintMesher.cs` |
+| 4 | Arbeits-Arrays der exakten Arithmetik thread-lokal; jede `RobustPredicates`-Instanz ist jetzt thread-sicher. | `RobustPredicates.cs` |
+| 5, 11 | Identische Punkte: leeres Netz statt StackOverflow (Dwyer) bzw. Exception (SweepLine). | `Dwyer.cs`, `SweepLine.cs` |
+| 6 | Smoother: Schwerpunkt relativ zum Generator. | `Smoothing/SimpleSmoother.cs` |
+| 7, 8 | NaN/Infinity → `ArgumentException`; vollständige Prüfung auf eindeutige IDs. | `Mesh.cs` |
+| 9 | `Vertex` nutzt den koordinatenbasierten Hashcode von `Point`. | `Geometry/Vertex.cs` |
+| 10 | SweepLine: abschließender Flip-Durchlauf mit exakten Prädikaten. | `SweepLine.cs` |
+| neu | **aCute-Verfeinerung** (seit 2022 Standard) startete die Punktsuche an einer Kante, links von der der neue Punkt nicht liegt → Punkt im falschen Dreieck, invertierte Dreiecke. Jetzt wird die Startkante per Orientierungstest gewählt. | `Meshing/QualityMesher.cs` |
+| neu | aCute-Ort fällt auf einen bestehenden Punkt → Rückfall auf den Umkreismittelpunkt statt Exception. | `Meshing/QualityMesher.cs` |
+
+**Ergebnis (Fuzzing, jeder Fall in eigenem Prozess):**
+
+| Szenario | vorher | nachher |
+|----------|--------|---------|
+| 15 zufällige Integer-Segmente, ohne Qualität | 157/200 | 500/500 |
+| 40 Segmente, Mindestwinkel 25° | – (meist Fehler) | 300/300 |
+| 40 Segmente, 30° | – | 200/200 |
+| 15 Segmente, 20°, Offset 1e6 | – | 200/200 |
+| 100 Segmente, 20° / 28° | – | 200/200, 100/100 |
+| 200 Segmente auf 50er-Raster, 20° | – | 50/50 |
+| Nachbarflächen mit Abweichung 1e-12, 25°, **ohne** Steiner-Limit | terminiert nicht | ~30 ms |
+
+Die Testsuite hat jetzt 203 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
+Regressionstests geworden.
+
 ## Die Testsuite (`src/Triangle.Tests/Robustness`)
 
-* **Red Tests** tragen die Kategorie `KnownBug` (20 Tests) und dokumentieren jeweils einen Fehler
-  mit Schweregrad in der `[Description]`. Wird ein Fehler behoben, wird der Test grün; dann die
-  Kategorie entfernen, und er wird zum Regressionstest.
+* **Red Tests** tragen die Kategorie `KnownBug` und dokumentieren jeweils einen Fehler mit
+  Schweregrad in der `[Description]`. Wird ein Fehler behoben, wird der Test grün; dann die
+  Kategorie entfernen, und er wird zum Regressionstest. Derzeit gibt es keine offenen
+  `KnownBug`-Tests.
 * **Grüne Tests** (`RobustnessRegressionTest` u. a.) sichern das heute korrekte Verhalten ab.
 * `MeshAssert` prüft Konsistenz, invertierte Dreiecke, vollständige Eingabesegmente, Fläche und
   Terminierung (mit Timeout).
