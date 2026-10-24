@@ -1262,7 +1262,7 @@ namespace TriangleNet.Meshing
         /// <summary>
         /// Cover the convex hull of a triangulation with subsegments.
         /// </summary>
-        private void MarkHull()
+        internal void MarkHull()
         {
             Otri hulltri = default(Otri);
             Otri nexttri = default(Otri);

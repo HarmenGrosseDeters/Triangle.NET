@@ -51,6 +51,23 @@ namespace TriangleNet
             stack = new Stack<Triangle>(BLOCKSIZE);
         }
 
+        // After the triangles have been renumbered (ids 0 to n-1), new triangles get the
+        // following ids (their hash could collide with the new ids). -1: ids are hashes.
+        private int nextId = -1;
+
+        /// <summary>
+        /// Continue the numbering of new triangles after renumbering the triangles.
+        /// </summary>
+        internal void SetNextId(int id)
+        {
+            nextId = id;
+        }
+
+        private int NextId(Triangle triangle)
+        {
+            return nextId < 0 ? triangle.hash : nextId++;
+        }
+
         /// <summary>
         /// Gets a triangle from the pool.
         /// </summary>
@@ -64,12 +81,14 @@ namespace TriangleNet
                 triangle = stack.Pop();
                 triangle.hash = -triangle.hash - 1;
 
+                triangle.id = NextId(triangle);
+
                 Cleanup(triangle);
             }
             else if (count < size)
             {
                 triangle = pool[count / BLOCKSIZE][count % BLOCKSIZE];
-                triangle.id = triangle.hash;
+                triangle.id = NextId(triangle);
 
                 Cleanup(triangle);
 
@@ -79,7 +98,7 @@ namespace TriangleNet
             {
                 triangle = new Triangle();
                 triangle.hash = size;
-                triangle.id = triangle.hash;
+                triangle.id = NextId(triangle);
 
                 int block = size / BLOCKSIZE;
 
@@ -140,19 +159,23 @@ namespace TriangleNet
         /// <returns></returns>
         internal IEnumerable<Triangle> Sample(int k, Random random)
         {
-            int i, count = this.Count;
+            int i, alive = this.Count;
 
-            if (k > count)
+            if (k > alive)
             {
                 // TODO: handle Sample special case.
-                k = count;
+                k = alive;
             }
 
             Triangle t;
 
             // TODO: improve sampling code (to ensure no duplicates).
 
-            while (k > 0)
+            // Live triangles are spread over all used slots [0, count), not only the first
+            // 'alive' ones. Bound the number of attempts (if almost all slots are free).
+            int attempts = 20 * k + 100;
+
+            while (k > 0 && attempts-- > 0)
             {
                 i = random.Next(0, count);
 
@@ -203,7 +226,7 @@ namespace TriangleNet
                 var block = pool[i];
 
                 // Number of triangles in current block:
-                int length = (size - i * BLOCKSIZE) % BLOCKSIZE;
+                int length = Math.Min(BLOCKSIZE, size - i * BLOCKSIZE);
 
                 for (int j = 0; j < length; j++)
                 {
@@ -212,6 +235,7 @@ namespace TriangleNet
             }
 
             size = count = 0;
+            nextId = -1;
         }
 
         /// <inheritdoc />
@@ -219,7 +243,7 @@ namespace TriangleNet
         {
             int i = item.hash;
 
-            if (i < 0 || i > size)
+            if (i < 0 || i >= size)
             {
                 return false;
             }

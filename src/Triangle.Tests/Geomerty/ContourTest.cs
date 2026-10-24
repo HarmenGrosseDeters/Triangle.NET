@@ -56,12 +56,18 @@ namespace TriangleNet.Tests.Geometry
 
             for (int j = 0; j < count; j++)
             {
+                // The hole point must not lie on a segment (it may lie on the extension of one).
                 double ccw = p.CounterClockwise(points[i], h, points[j]);
+                bool inBox = Math.Min(points[i].X, points[j].X) <= h.X && h.X <= Math.Max(points[i].X, points[j].X) &&
+                             Math.Min(points[i].Y, points[j].Y) <= h.Y && h.Y <= Math.Max(points[i].Y, points[j].Y);
 
-                Assert.That(Math.Abs(ccw), Is.GreaterThan(1e-12));
+                Assert.That(ccw != 0.0 || !inBox, Is.True);
 
                 i = j;
             }
+
+            // Strictly inside the L-shape.
+            Assert.That(h.X > 1 && h.Y > 1 && (h.X < 2 && h.Y < 3 || h.X < 3 && h.Y < 2), Is.True);
         }
 
         [Test]

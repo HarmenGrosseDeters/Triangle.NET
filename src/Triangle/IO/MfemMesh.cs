@@ -79,7 +79,8 @@ namespace TriangleNet.IO
         /// <param name="stream">The target stream.</param>
         public static void Write(IMesh mesh, Stream stream)
         {
-            using var sw = new StreamWriter(stream)
+            // Leave the caller's stream open.
+            using var sw = new StreamWriter(stream, new System.Text.UTF8Encoding(false), 1024, true)
             {
                 NewLine = "\n"
             };

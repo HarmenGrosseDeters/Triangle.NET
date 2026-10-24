@@ -15,8 +15,6 @@ namespace TriangleNet.Meshing.Iterators
     /// </summary>
     public class VertexCirculator
     {
-        private readonly List<Otri> cache = new List<Otri>();
-
         /// <summary>
         /// Initializes a new instance of the <see cref="VertexCirculator" /> class.
         /// </summary>
@@ -32,9 +30,7 @@ namespace TriangleNet.Meshing.Iterators
         /// <returns></returns>
         public IEnumerable<Vertex> EnumerateVertices(Vertex vertex)
         {
-            BuildCache(vertex, true);
-
-            foreach (var item in cache)
+            foreach (var item in BuildCache(vertex, true))
             {
                 yield return item.Dest();
             }
@@ -47,17 +43,22 @@ namespace TriangleNet.Meshing.Iterators
         /// <returns></returns>
         public IEnumerable<ITriangle> EnumerateTriangles(Vertex vertex)
         {
-            BuildCache(vertex, false);
-
-            foreach (var item in cache)
+            foreach (var item in BuildCache(vertex, false))
             {
                 yield return item.tri;
             }
         }
 
-        private void BuildCache(Vertex vertex, bool vertices)
+        private List<Otri> BuildCache(Vertex vertex, bool vertices)
         {
-            cache.Clear();
+            // A new list for each call (enumerations may be nested).
+            var cache = new List<Otri>();
+
+            if (vertex.tri.tri == null || vertex.type == VertexType.UndeadVertex)
+            {
+                // Not part of the mesh topology (e.g. a duplicate input vertex).
+                return cache;
+            }
 
             Otri init = vertex.tri;
             Otri next = default;
@@ -106,6 +107,8 @@ namespace TriangleNet.Meshing.Iterators
                     }
                 }
             }
+
+            return cache;
         }
     }
 }

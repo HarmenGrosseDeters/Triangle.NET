@@ -116,7 +116,7 @@ namespace TriangleNet
         /// <summary>
         /// Gets the number of mesh edges.
         /// </summary>
-        public int NumberOfEdges => (3 * triangles.Count + hullsize) / 2;
+        public int NumberOfEdges => triangles.Count == 0 ? 0 : (3 * triangles.Count + hullsize) / 2;
 
         /// <summary>
         /// Indicates whether the input is a PSLG or a point set.
@@ -133,6 +133,14 @@ namespace TriangleNet
         #region "Outer space" variables
 
         internal const int DUMMY = -1;
+
+        // The configuration the mesh was created with (used for refinement).
+        private readonly Configuration config;
+
+        /// <summary>
+        /// Maximum absolute value of input coordinates.
+        /// </summary>
+        public const double MaxCoordinate = 1e70;
 
         // The triangle that fills "outer space," called 'dummytri', is pointed to
         // by every triangle and subsegment on a boundary (be it outer or inner) of
@@ -215,6 +223,8 @@ namespace TriangleNet
 
             predicates = config.Predicates();
 
+            this.config = config;
+
             locator = new TriangleLocator(this, predicates, config.RandomSource());
 
             TransferNodes(points);
@@ -237,9 +247,17 @@ namespace TriangleNet
 
             Reset();
 
+            if (subsegs.Count == 0 && triangles.Count > 0)
+            {
+                // Mesh of a point set: enclose the convex hull with subsegments (like the
+                // triangulation of a polygon without segments does), otherwise refinement
+                // inserts vertices outside the hull.
+                new ConstraintMesher(this, config).MarkHull();
+            }
+
             if (qualityMesher == null)
             {
-                qualityMesher = new QualityMesher(this, new Configuration());
+                qualityMesher = new QualityMesher(this, config);
             }
 
             // Enforce angle and area constraints.
@@ -280,10 +298,12 @@ namespace TriangleNet
                 var rcm = new CuthillMcKee();
                 var iperm = rcm.Renumber(this);
 
-                // Permute the node indices.
+                // Permute the node indices (undead vertices aren't part of the permutation).
+                int next = iperm.Length;
+
                 foreach (var node in vertices.Values)
                 {
-                    node.id = iperm[node.id];
+                    node.id = node.type == VertexType.UndeadVertex ? next++ : iperm[node.id];
                 }
             }
 
@@ -296,6 +316,8 @@ namespace TriangleNet
             {
                 item.id = id++;
             }
+
+            triangles.SetNextId(id);
         }
 
         #region Misc
@@ -401,6 +423,13 @@ namespace TriangleNet
                 {
                     throw new ArgumentException("Input vertex (ID " + p.id + ") has a NaN or infinite coordinate.", nameof(points));
                 }
+
+                // The exact predicates evaluate products of up to four coordinate differences
+                // (incircle test), which overflow beyond about 1e75.
+                if (Math.Abs(p.x) > MaxCoordinate || Math.Abs(p.y) > MaxCoordinate)
+                {
+                    throw new ArgumentException("Input vertex (ID " + p.id + ") has a coordinate larger than " + MaxCoordinate + " (exact arithmetic would overflow).", nameof(points));
+                }
             }
 
             // Use the user defined ids only if they are pairwise distinct.
@@ -408,6 +437,10 @@ namespace TriangleNet
 
             foreach (var p in points)
             {
+                // The vertex might have been used in another mesh before.
+                p.tri = default(Otri);
+                p.type = VertexType.InputVertex;
+
                 if (userId)
                 {
                     p.hash = p.id;

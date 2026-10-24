@@ -74,7 +74,8 @@ namespace TriangleNet
         public static bool Verbose { get; set; }
 
         /// <summary>
-        /// Gets all log messages.
+        /// Gets all log messages. Adding messages is thread-safe; lock on this list while
+        /// enumerating it if meshing runs in parallel.
         /// </summary>
         public IList<LogEvent> Data { get; } = new List<LogEvent>();
 
@@ -102,7 +103,10 @@ namespace TriangleNet
         /// <param name="item"></param>
         public void Add(LogEvent item)
         {
-            Data.Add(item);
+            lock (Data)
+            {
+                Data.Add(item);
+            }
         }
 
         /// <summary>
@@ -110,7 +114,10 @@ namespace TriangleNet
         /// </summary>
         public void Clear()
         {
-            Data.Clear();
+            lock (Data)
+            {
+                Data.Clear();
+            }
         }
 
         /// <summary>
@@ -119,7 +126,7 @@ namespace TriangleNet
         /// <param name="message">The message.</param>
         public void Info(string message)
         {
-            Data.Add(new LogEvent(LogEventLevel.Information, message));
+            Add(new LogEvent(LogEventLevel.Information, message));
         }
 
         /// <summary>
@@ -129,7 +136,7 @@ namespace TriangleNet
         /// <param name="details">Message details, for example the code location where the error occurred (class, method).</param>
         public void Warning(string message, string details)
         {
-            Data.Add(new LogEvent(LogEventLevel.Warning, message, details));
+            Add(new LogEvent(LogEventLevel.Warning, message, details));
         }
 
         /// <summary>
@@ -139,7 +146,7 @@ namespace TriangleNet
         /// <param name="details">Message details, for example the code location where the error occurred (class, method).</param>
         public void Error(string message, string details)
         {
-            Data.Add(new LogEvent(LogEventLevel.Error, message, details));
+            Add(new LogEvent(LogEventLevel.Error, message, details));
         }
     }
 }

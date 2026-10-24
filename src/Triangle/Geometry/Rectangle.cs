@@ -30,8 +30,11 @@ namespace TriangleNet.Geometry
         /// </summary>
         /// <param name="other"></param>
         public Rectangle(Rectangle other)
-            : this(other.Left, other.Bottom, other.Right, other.Top)
         {
+            xmin = other.xmin;
+            ymin = other.ymin;
+            xmax = other.xmax;
+            ymax = other.ymax;
         }
 
         /// <summary>
@@ -177,8 +180,8 @@ namespace TriangleNet.Geometry
         /// <returns>Return true, if given rectangle intersects this rectangle.</returns>
         public bool Intersects(Rectangle other)
         {
-            return other.Left < xmax && xmin < other.Right
-                && other.Bottom < ymax && ymin < other.Top;
+            return other.Left <= xmax && xmin <= other.Right
+                && other.Bottom <= ymax && ymin <= other.Top;
         }
     }
 }

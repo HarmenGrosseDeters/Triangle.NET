@@ -218,10 +218,9 @@ namespace TriangleNet.Topology.DCEL
         /// </remarks>
         public void ResolveBoundaryEdges()
         {
-            // Maps vertices to leaving boundary edge.
-            var map = new Dictionary<int, HalfEdge>();
+            // Create the missing twins (boundary half-edges of the outer face).
+            var boundary = new List<HalfEdge>();
 
-            // TODO: parallel?
             foreach (var edge in edges)
             {
                 if (edge.twin == null)
@@ -229,19 +228,48 @@ namespace TriangleNet.Topology.DCEL
                     var twin = edge.twin = new HalfEdge(edge.next.origin, Face.Empty);
                     twin.twin = edge;
 
-                    map.Add(twin.origin.id, twin);
+                    boundary.Add(twin);
                 }
             }
 
             int j = edges.Count;
 
-            foreach (var edge in map.Values)
+            foreach (var twin in boundary)
             {
-                edge.id = j++;
-                edge.next = map[edge.twin.origin.id];
+                // The boundary half-edge ends at the origin of its twin (vertex a). Its successor
+                // leaves a along the boundary: rotate around a, starting at the twin, until the
+                // boundary is reached. Unlike a lookup by vertex, this also works if two boundary
+                // half-edges leave the same vertex (faces touching at a vertex).
+                var e = twin.twin;
 
-                edges.Add(edge);
+                while (true)
+                {
+                    var entering = Previous(e);
+
+                    if (entering.twin.face == Face.Empty)
+                    {
+                        twin.next = entering.twin;
+                        break;
+                    }
+
+                    e = entering.twin;
+                }
+
+                twin.id = j++;
+                edges.Add(twin);
             }
+        }
+
+        private static HalfEdge Previous(HalfEdge edge)
+        {
+            var prev = edge;
+
+            while (prev.next != edge)
+            {
+                prev = prev.next;
+            }
+
+            return prev;
         }
 
         /// <summary>
