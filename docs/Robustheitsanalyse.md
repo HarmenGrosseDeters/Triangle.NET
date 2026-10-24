@@ -197,7 +197,7 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | 200 Segmente auf 50er-Raster, 20° | – | 50/50 |
 | Nachbarflächen mit Abweichung 1e-12, 25°, **ohne** Steiner-Limit | terminiert nicht | ~30 ms |
 
-Die Testsuite hat jetzt 404 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
+Die Testsuite hat jetzt 752 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
 Regressionstests geworden.
 
 ### Externer Korpus: GEOS-Robustheitstests
@@ -326,6 +326,26 @@ Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Ke
 
 Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
 (bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
+
+## Klassenweises Review (`src/Triangle.Tests/Review`)
+
+Alle 80 Quelldateien wurden in sechs Bereichen auf Fehler untersucht; jede Vermutung wurde mit
+einem Test geprüft (Review A–F, 269 Testfälle). 60 Fehler bestätigten sich, alle sind
+behoben, die Tests sind jetzt Regressionstests; 3 weitere Befunde sind dokumentierte Grenzen. Widerlegte Vermutungen sind als
+Regressionstests erhalten.
+
+| Bereich | Wichtigste Befunde (alle behoben) |
+|---------|-----------------------------------|
+| A Mesh, Pool, Behavior | Doppelte Dreiecks-IDs nach `Renumber` + `Refine` (`mesh.Edges` ließ Kanten aus); `Refine` eines Punktnetzes vergrößerte das Gebiet (Hülle nicht markiert) und ignorierte die Konfiguration; Vertex-Objekte aus einem anderen Netz verbanden zwei Netze; ungültiger Winkel schaltete alle Qualitätsvorgaben ab; `TrianglePool.Contains/Sample/Clear` |
+| B Qualitätsverfeinerung | `MaximumAngle` allein wirkungslos; `IndexOutOfRange` beim Verfeinern mit Maximalwinkel (geteilte Arbeitsarrays); nach dem Löschen von Punkten wurden Dreiecke bei eingeschränkter Segmentteilung nicht geprüft (zu große Dreiecke); `VariableArea` bei Punktnetzen ignoriert; Warteschlange bei extremen Kantenlängen |
+| C Noding, Constraints, Converter | Schnittpunkte bekamen ID 0 (Benutzer-IDs wurden neu vergeben); Snap-Toleranz größer als ein Loch leerte das ganze Netz; Labels bei deckungsgleichen Teilstücken und verschmolzenen Punkten; mehrere Regionspunkte in einem Gebiet; `ToDCEL` bei Löchern, die den Rand berühren; `ToMesh` mit beliebigen IDs; Noding langer paralleler Segmente quadratisch (20.000 Linien: 4,7 s) |
+| D Geometrie, Topologie | **Lochpunkt landete bei UTM-Koordinaten auf dem Lochrand** (13 von 154 zufälligen dreieckigen Löchern: Netz um das Loch herum gelöscht, ohne Fehlermeldung); dünne Konturen ohne Innenpunkt (Exception); `Rectangle`-Kopierkonstruktor, `Intersects`; `VertexCirculator` verschachtelt bzw. für doppelte Punkte; DCEL an Berührpunkten |
+| E Voronoi, Glätten, Tools | Wiederverwendeter `SimpleSmoother` zerstörte das zuvor geglättete Netz; Abbruch hinterließ halb verschobene Punkte; Abbruchkriterium skalenabhängig; Reverse Cuthill-McKee sortierte Nachbarn falsch (Bandbreite 9 statt 7); `TriangleQuadTree` fand Punkte auf inneren Kanten nicht; `PolygonValidator`; Legacy-Voronoi mit doppelten Punkten |
+| F IO, Prädikate, Log | **`.poly` schreiben: alle Segmente als „0 0“** bei Polygonen aus Konturen; Regionsflächen gingen beim Schreiben verloren bzw. wurden in Exponentialschreibweise nicht gelesen; Kommentare am Zeilenende; 6-Knoten-Elemente; kulturabhängige Ganzzahlen; `Jettison`-Nummerierung; Log nicht thread-sicher; Koordinaten > 1e70 (Überlauf der exakten Arithmetik) werden jetzt abgewiesen |
+
+Dokumentierte Grenzen (keine Fehler): Die exakten Prädikate setzen voraus, dass Koordinaten-
+differenzen nicht unter etwa 1e-75 liegen (Unterlauf, wie im C-Original). `BoundedVoronoi`
+setzt ein Conforming-Delaunay-Netz voraus.
 
 ## Upstream-Issues (github.com/wo80/Triangle.NET/issues)
 
