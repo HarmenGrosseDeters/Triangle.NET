@@ -373,6 +373,14 @@ namespace TriangleNet.Meshing
             }
 
             // Check whether the angle is smaller than permitted.
+            if (gridSize > 0.0 && minedge < 4.0 * gridSize * gridSize)
+            {
+                // Triangles with edges shorter than two grid cells can't be improved by
+                // Steiner points on the grid (rounding them changes the angles too much, and
+                // refinement would cascade down to the grid all around small input angles).
+                return;
+            }
+
             if ((angle > behavior.goodAngle) || (maxangle < behavior.maxGoodAngle && behavior.MaxAngle != 0.0))
             {
                 // Use the rules of Miller, Pav, and Walkington to decide that certain
@@ -430,8 +438,10 @@ namespace TriangleNet.Meshing
                             dist2 = ((base2.x - joinvertex.x) * (base2.x - joinvertex.x) +
                                      (base2.y - joinvertex.y) * (base2.y - joinvertex.y));
                             // If the two distances are equal, don't split the triangle.
-                            if ((dist1 < 1.001 * dist2) && (dist1 > 0.999 * dist2))
+                            if (((dist1 < 1.001 * dist2) && (dist1 > 0.999 * dist2)) ||
+                                (gridSize > 0.0 && Math.Abs(Math.Sqrt(dist1) - Math.Sqrt(dist2)) <= 2.0 * gridSize))
                             {
+                                // With a grid, the vertices on the shells are rounded.
                                 // Return now to avoid enqueueing the bad triangle.
                                 return;
                             }
@@ -642,7 +652,15 @@ namespace TriangleNet.Meshing
 #if USE_Z
                     newvertex.z = eorg.z + split * (edest.z - eorg.z);
 #endif
-                    if (!Behavior.NoExact)
+                    if (GridSize > 0.0)
+                    {
+                        // Split vertices on the output grid (the subsegments bend slightly).
+                        // Subsegments shorter than the grid can't be split: the rounded
+                        // location coincides with an endpoint or isn't a valid split (below).
+                        newvertex.x = GridSnapper.Round(newvertex.x, GridSize);
+                        newvertex.y = GridSnapper.Round(newvertex.y, GridSize);
+                    }
+                    else if (!Behavior.NoExact)
                     {
                         // Roundoff in the above calculation may yield a 'newvertex'
                         // that is not precisely collinear with 'eorg' and 'edest'.
@@ -794,6 +812,14 @@ namespace TriangleNet.Meshing
                         newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
                     }
 
+                    if (GridSize > 0.0)
+                    {
+                        // Steiner points on the output grid. If the triangle is smaller than
+                        // the grid, the rounded location may coincide with one of its vertices
+                        // (the triangle can't be refined then, see below).
+                        newloc = new Point(GridSnapper.Round(newloc.x, GridSize), GridSnapper.Round(newloc.y, GridSize));
+                    }
+
                     // Check whether the new vertex lies on a triangle vertex.
                     if (((newloc.x == borg.x) && (newloc.y == borg.y)) ||
                         ((newloc.x == bdest.x) && (newloc.y == bdest.y)) ||
@@ -824,9 +850,9 @@ namespace TriangleNet.Meshing
                         // circumcenter lies outside the org-dest edge, and eta is
                         // negative.  Roundoff error might prevent eta from being
                         // negative when it should be, so I test eta against xi.)
-                        if (useAcute)
+                        if (useAcute || GridSize > 0.0)
                         {
-                            // The aCute location isn't necessarily the circumcenter and might
+                            // The aCute location (or the rounded location) isn't necessarily the circumcenter and might
                             // lie outside the triangle, so xi and eta can't be used. Point
                             // location requires the new vertex to lie to the left of the edge.
                             for (int i = 0; i < 2 && predicates.CounterClockwise(badotri.Org(), badotri.Dest(), newloc) <= 0.0; i++)
@@ -1243,6 +1269,18 @@ namespace TriangleNet.Meshing
 
             return behavior.CanSplitSegment == null || behavior.CanSplitSegment(seg);
         }
+
+        /// <summary>
+        /// Size of the grid Steiner points are rounded to (0 = no rounding).
+        /// </summary>
+        internal double GridSize
+        {
+            get { return gridSize; }
+            set { gridSize = value; newLocation.GridSize = value; }
+        }
+
+        private double gridSize;
+
 
         // Set if CanSplit refused a subsegment because of the precision limit (reset by
         // SplitTriangle). Only subsegments which must not be split by the user's choice justify

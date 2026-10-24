@@ -15,7 +15,8 @@ namespace TriangleNet.Tests.Corpus
         /// <summary>
         /// Returns "OK ..." or a description of the failure.
         /// </summary>
-        public static string Run(CorpusCase c, double minAngle, int steinerPoints, double snapTolerance = 0.0)
+        public static string Run(CorpusCase c, double minAngle, int steinerPoints, double snapTolerance = 0.0,
+            double gridSize = 0.0, double outputGrid = 0.0, double wedgeTolerance = 0.0)
         {
             var poly = new Polygon();
             var map = new Dictionary<(double, double), Vertex>();
@@ -57,6 +58,12 @@ namespace TriangleNet.Tests.Corpus
             double w = Math.Max(Math.Max(b.Width, b.Height) * 0.1, mag * 1e-6 + 1e-6);
             var f = new[] { (b.Left - w, b.Bottom - w), (b.Right + w, b.Bottom - w), (b.Right + w, b.Top + w), (b.Left - w, b.Top + w) };
 
+            if (gridSize > 0.0)
+            {
+                // The frame is snapped to the grid, too.
+                f = f.Select(p => (GridSnapper.Round(p.Item1, gridSize), GridSnapper.Round(p.Item2, gridSize))).ToArray();
+            }
+
             for (int i = 0; i < 4; i++)
             {
                 poly.Add(new Segment(V(f[i]), V(f[(i + 1) % 4])));
@@ -71,7 +78,7 @@ namespace TriangleNet.Tests.Corpus
             try
             {
                 var quality = minAngle > 0 ? new QualityOptions { MinimumAngle = minAngle, SteinerPoints = steinerPoints } : null;
-                mesh = (Mesh)poly.Triangulate(new ConstraintOptions { SnapTolerance = snapTolerance }, quality);
+                mesh = (Mesh)poly.Triangulate(new ConstraintOptions { SnapTolerance = snapTolerance, GridSize = gridSize, WedgeTolerance = wedgeTolerance }, quality);
             }
             catch (ArgumentException) when (poly.Points.Any(p => !IsFinite(p.X) || !IsFinite(p.Y)))
             {
@@ -110,7 +117,7 @@ namespace TriangleNet.Tests.Corpus
 
             // Every input segment must be covered by mesh subsegments (within the snap tolerance).
             SegmentNoder.Node(poly, predicates, out double noderTolerance, minTolerance: snapTolerance);
-            double tol = Math.Max(scale * 1e-11, 4 * noderTolerance);
+            double tol = Math.Max(Math.Max(scale * 1e-11, 4 * noderTolerance), Math.Max(gridSize, wedgeTolerance));
 
             var subsegs = mesh.Segments.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList();
             int missing = poly.Segments.Count(s => !IsCovered(subsegs, s.GetVertex(0), s.GetVertex(1), tol));
@@ -125,7 +132,17 @@ namespace TriangleNet.Tests.Corpus
             int bad = minAngle > 0 ? mesh.Triangles.Count(t => MinimumAngle(t) < minAngle - 0.01) : 0;
             bool limit = minAngle > 0 && mesh.Vertices.Count - poly.Points.Count >= steinerPoints;
 
-            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)}";
+            // Triangles which are flat or inverted after rounding the coordinates to the output grid.
+            double og = gridSize > 0.0 ? gridSize : outputGrid;
+            int flip = 0;
+
+            if (og > 0.0)
+            {
+                Vertex R(Vertex v) => new Vertex(GridSnapper.Round(v.X, og), GridSnapper.Round(v.Y, og));
+                flip = mesh.Triangles.Count(t => predicates.CounterClockwise(R(t.GetVertex(0)), R(t.GetVertex(1)), R(t.GetVertex(2))) <= 0.0);
+            }
+
+            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)} flip={flip}";
         }
 
         private static double MinimumAngle(Topology.Triangle t)

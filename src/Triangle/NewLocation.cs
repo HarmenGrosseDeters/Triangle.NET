@@ -67,6 +67,21 @@ namespace TriangleNet
             relocatedVertices.Add(v);
         }
 
+        /// <summary>
+        /// Size of the grid Steiner points are rounded to (0 = no rounding).
+        /// </summary>
+        internal double GridSize { get; set; }
+
+        /// <summary>
+        /// With a grid, vertices aren't relocated: the rounded position may coincide with the
+        /// old one, or inserting it may fail (the deleted vertex is lost then), so the same
+        /// vertex would be deleted and reinserted forever.
+        /// </summary>
+        private int CheckGridRelocation(int relocated)
+        {
+            return GridSize > 0.0 ? 0 : relocated;
+        }
+
         // Work arrays for wegde intersection
         double[] petalx = new double[20];
         double[] petaly = new double[20];
@@ -429,6 +444,7 @@ namespace TriangleNet
                 //- RELOCATION	(LOCAL SMOOTHING) -//
                 // check for possible relocation of one of triangle's points
                 relocated = DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                relocated = CheckGridRelocation(relocated);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {
@@ -1131,6 +1147,7 @@ namespace TriangleNet
                 // RELOCATION	(LOCAL SMOOTHING)
                 // check for possible relocation of one of triangle's points
                 relocated = DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                relocated = CheckGridRelocation(relocated);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {

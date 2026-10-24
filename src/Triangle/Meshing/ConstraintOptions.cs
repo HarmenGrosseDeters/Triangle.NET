@@ -61,6 +61,33 @@ namespace TriangleNet.Meshing
         public double SnapTolerance { get; set; }
 
         /// <summary>
+        /// Gets or sets the distance up to which nearly coincident segments are merged
+        /// (default = 0, off).
+        /// </summary>
+        /// <remarks>
+        /// A segment which starts at another segment and runs along it at a small angle (less
+        /// than <see cref="SegmentNoder.MaxWedgeAngle"/>), e.g. a wall digitized slightly off
+        /// a parcel boundary, forms a thin wedge with a tiny input angle which refinement can't
+        /// fix. If the other end of the segment is closer than the wedge tolerance to the
+        /// segment it runs along, the two are merged. Unlike a larger <see cref="SnapTolerance"/>,
+        /// this doesn't affect vertices which are close to a segment in other configurations.
+        /// </remarks>
+        public double WedgeTolerance { get; set; }
+
+        /// <summary>
+        /// Gets or sets the size of the grid all vertices of the mesh are rounded to
+        /// (default = 0, no rounding).
+        /// </summary>
+        /// <remarks>
+        /// Set this to the precision of the output (e.g. 0.01 if coordinates in meters are
+        /// written with two decimal places). Rounding the coordinates of a mesh afterwards can
+        /// flip or flatten triangles near nearly coincident lines. With a grid, the input is
+        /// snap rounded (see <see cref="SegmentNoder.SnapRound"/>) and the Steiner points are
+        /// moved to the grid where this doesn't flip a triangle (see <see cref="GridSnapper"/>).
+        /// </remarks>
+        public double GridSize { get; set; }
+
+        /// <summary>
         /// Gets or sets a filter deciding whether a segment may be split during mesh
         /// refinement (in addition to <see cref="SegmentSplitting"/>). If null (default),
         /// all segments may be split.

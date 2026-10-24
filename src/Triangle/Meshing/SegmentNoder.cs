@@ -61,6 +61,12 @@ namespace TriangleNet.Meshing
         }
 
         /// <summary>
+        /// Maximum angle (in degrees) of a wedge between two segments which is merged
+        /// (see the wedgeTolerance parameter of <see cref="Node(IPolygon, IPredicates, out double, int, double, double)"/>).
+        /// </summary>
+        public const double MaxWedgeAngle = 10.0;
+
+        /// <summary>
         /// Split all segments of the polygon at their intersections and at vertices lying
         /// (almost) on the segments.
         /// </summary>
@@ -71,6 +77,12 @@ namespace TriangleNet.Meshing
         /// <param name="minTolerance">Minimum absolute snap tolerance (0 = automatic). Use this to
         /// merge features below the precision of the data, e.g. 0.01 for coordinates in meters
         /// which are only accurate to a centimeter.</param>
+        /// <param name="wedgeTolerance">Distance up to which nearly coincident segments are
+        /// merged (0 = off): a vertex v is inserted into a segment (a, b), if its distance to the
+        /// segment is at most the wedge tolerance, and v is connected to a or b by a segment which
+        /// forms an angle of less than <see cref="MaxWedgeAngle"/> with (a, b). Such thin wedges
+        /// (e.g. a wall digitized slightly off a parcel boundary) have tiny input angles which
+        /// refinement can't fix.</param>
         /// <returns>The input polygon, if nothing had to be changed, otherwise a new polygon.</returns>
         /// <remarks>
         /// If noding doesn't converge (e.g. for many nearly coincident segments, where rounded
@@ -78,7 +90,8 @@ namespace TriangleNet.Meshing
         /// tolerance (up to <see cref="MaxRelativeTolerance"/>), like the snapping noder of GEOS.
         /// </remarks>
         /// <exception cref="InvalidOperationException">Noding doesn't converge.</exception>
-        public static IPolygon Node(IPolygon polygon, IPredicates predicates, out double tolerance, int maxIterations = 10, double minTolerance = 0.0)
+        public static IPolygon Node(IPolygon polygon, IPredicates predicates, out double tolerance, int maxIterations = 10,
+            double minTolerance = 0.0, double wedgeTolerance = 0.0)
         {
             tolerance = 0.0;
 
@@ -109,7 +122,7 @@ namespace TriangleNet.Meshing
             {
                 tolerance = t;
 
-                if (TryNode(polygon, predicates, tolerance, maxIterations, maxNewPoints, out var result))
+                if (TryNode(polygon, predicates, tolerance, wedgeTolerance, maxIterations, maxNewPoints, out var result))
                 {
                     return result;
                 }
@@ -119,7 +132,273 @@ namespace TriangleNet.Meshing
                 "Consider cleaning the input (e.g. snapping it to a grid).");
         }
 
-        private static bool TryNode(IPolygon polygon, IPredicates predicates, double tolerance,
+        /// <summary>
+        /// Snap rounding: round all vertices to the grid and split all segments at their
+        /// intersections (rounded to the grid) and at vertices whose grid cell (hot pixel)
+        /// they pass through.
+        /// </summary>
+        /// <param name="polygon">The input polygon (won't be modified).</param>
+        /// <param name="predicates">The predicates used to detect crossings.</param>
+        /// <param name="gridSize">The grid size, e.g. 0.01 for coordinates in meters which
+        /// are written with two decimal places.</param>
+        /// <param name="maxIterations">Maximum number of noding iterations.</param>
+        /// <returns>The noded polygon with all vertices on the grid.</returns>
+        /// <remarks>
+        /// Since the rounded intersection points don't lie exactly on the segments, the
+        /// segments are bent slightly (by at most half a grid cell). Afterwards, no two segments
+        /// cross and every vertex has a distance of at least half a grid cell to every segment
+        /// not ending in it (iterated snap rounding, Hobby 1999, Halperin and Packer 2002).
+        ///
+        /// If snap rounding doesn't converge, the result of <see cref="Node(IPolygon, IPredicates, int, double)"/>
+        /// with the grid size as minimum tolerance is returned (not all vertices are on the grid then).
+        /// </remarks>
+        public static IPolygon SnapRound(IPolygon polygon, IPredicates predicates, double gridSize, int maxIterations = 20)
+        {
+            if (!(gridSize > 0.0) || double.IsInfinity(gridSize))
+            {
+                throw new ArgumentException("Grid size must be positive.", nameof(gridSize));
+            }
+
+            if (!polygon.Points.All(IsFinite))
+            {
+                return polygon;
+            }
+
+            int maxNewPoints = 50 * (polygon.Points.Count + polygon.Segments.Count) + 1000;
+
+            // Vertices by their (rounded) location.
+            var index = new Dictionary<(double, double), Vertex>();
+            var vertices = new List<Vertex>();
+
+            // Input vertices which were moved or merged.
+            var replaced = new Dictionary<Vertex, Vertex>(new ReferenceComparer());
+
+            var points = new List<Vertex>(polygon.Points.Count);
+            var newPoints = new List<Vertex>();
+
+            Vertex Find(double x, double y, out (double, double) key)
+            {
+                key = (GridSnapper.Round(x, gridSize), GridSnapper.Round(y, gridSize));
+                return index.TryGetValue(key, out var v) ? v : null;
+            }
+
+            Vertex Snap(Vertex p)
+            {
+                if (replaced.TryGetValue(p, out var r))
+                {
+                    return r;
+                }
+
+                var v = Find(p.x, p.y, out var key);
+
+                if (v == null)
+                {
+                    if (key.Item1 == p.x && key.Item2 == p.y)
+                    {
+                        v = p;
+                    }
+                    else
+                    {
+                        v = new Vertex(key.Item1, key.Item2, p.label) { id = p.id };
+#if USE_ATTRIBS
+                        v.attributes = p.attributes;
+#endif
+                        replaced[p] = v;
+                    }
+
+                    index.Add(key, v);
+                    vertices.Add(v);
+                    points.Add(v);
+                }
+                else if (!ReferenceEquals(v, p))
+                {
+                    replaced[p] = v;
+
+                    if (v.label == 0 && p.label != 0)
+                    {
+                        v.label = p.label;
+                    }
+                }
+
+                return v;
+            }
+
+            foreach (var p in polygon.Points)
+            {
+                Snap(p);
+            }
+
+            var segments = new List<ISegment>(polygon.Segments.Count);
+            var vanished = new List<(Vertex, Vertex)>();
+
+            foreach (var s in polygon.Segments)
+            {
+                var a = s.GetVertex(0);
+                var b = s.GetVertex(1);
+                var ra = Snap(a);
+                var rb = Snap(b);
+
+                if (SameLocation(ra, rb))
+                {
+                    vanished.Add((a, b));
+                }
+                else if (ReferenceEquals(ra, a) && ReferenceEquals(rb, b))
+                {
+                    segments.Add(s);
+                }
+                else
+                {
+                    segments.Add(new Segment(ra, rb, s.Label));
+                }
+            }
+
+            bool changed = replaced.Count > 0 || vanished.Count > 0;
+            bool converged = false;
+
+            var retired = new HashSet<(Vertex, Vertex)>(new EdgeComparer());
+
+            double half = 0.5 * gridSize;
+
+            for (int iteration = 0; iteration < maxIterations && newPoints.Count <= maxNewPoints; iteration++)
+            {
+                var splits = new Dictionary<int, List<(double, Vertex)>>();
+
+                foreach (var (i, j) in FindCrossings(segments, predicates))
+                {
+                    var a = segments[i].GetVertex(0);
+                    var b = segments[i].GetVertex(1);
+                    var c = segments[j].GetVertex(0);
+                    var d = segments[j].GetVertex(1);
+
+                    double abx = b.x - a.x, aby = b.y - a.y;
+                    double cdx = d.x - c.x, cdy = d.y - c.y;
+
+                    double denom = abx * cdy - aby * cdx;
+
+                    if (denom == 0.0)
+                    {
+                        continue;
+                    }
+
+                    double ts = Math.Max(0.0, Math.Min(1.0, ((c.x - a.x) * cdy - (c.y - a.y) * cdx) / denom));
+
+                    var v = Find(a.x + ts * abx, a.y + ts * aby, out var key);
+
+                    if (v == null)
+                    {
+                        v = new Vertex(key.Item1, key.Item2, segments[i].Label);
+                        index.Add(key, v);
+                        vertices.Add(v);
+                        newPoints.Add(v);
+                    }
+
+                    if (!SameLocation(v, a) && !SameLocation(v, b))
+                    {
+                        AddSplit(splits, i, Parameter(a, b, v), v);
+                    }
+
+                    if (!SameLocation(v, c) && !SameLocation(v, d))
+                    {
+                        AddSplit(splits, j, Parameter(c, d, v), v);
+                    }
+                }
+
+                if (splits.Count == 0)
+                {
+                    AddHotPixels(segments, vertices, half, retired, splits);
+                }
+
+                if (splits.Count == 0)
+                {
+                    converged = true;
+                    break;
+                }
+
+                foreach (var i in splits.Keys)
+                {
+                    retired.Add((segments[i].GetVertex(0), segments[i].GetVertex(1)));
+                }
+
+                segments = Split(segments, splits);
+                changed = true;
+            }
+
+            if (!converged)
+            {
+                return Node(polygon, predicates, minTolerance: gridSize);
+            }
+
+            if (!changed)
+            {
+                return polygon;
+            }
+
+            var noded = new Polygon(points.Count + newPoints.Count)
+            {
+                HasPointMarkers = polygon.HasPointMarkers,
+                HasSegmentMarkers = polygon.HasSegmentMarkers
+            };
+
+            int id = polygon.Points.Count == 0 ? 0 : polygon.Points.Max(p => p.id);
+
+            foreach (var v in newPoints)
+            {
+                v.id = ++id;
+            }
+
+            noded.Points.AddRange(points);
+            noded.Points.AddRange(newPoints);
+            noded.Segments.AddRange(segments);
+
+            bool Collapsed(Point p) => vanished.Any(e => DistanceToSegment(p, e.Item1, e.Item2) <= gridSize);
+
+            noded.Holes.AddRange(polygon.Holes.Where(h => !Collapsed(h)));
+            noded.Regions.AddRange(polygon.Regions.Where(r => !Collapsed(r.Point)));
+
+            return noded;
+        }
+
+        /// <summary>
+        /// Find vertices whose grid cell (square of size 2 * half centered at the vertex) is
+        /// intersected by a segment not ending in the vertex.
+        /// </summary>
+        private static void AddHotPixels(List<ISegment> segments, ICollection<Vertex> vertices,
+            double half, HashSet<(Vertex, Vertex)> retired, Dictionary<int, List<(double, Vertex)>> splits)
+        {
+            var grid = new VertexGrid(vertices);
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var a = segments[i].GetVertex(0);
+                var b = segments[i].GetVertex(1);
+
+                double dx = b.x - a.x, dy = b.y - a.y;
+
+                // A square with center v and half size h intersects the line through a and b,
+                // if the distance of v to the line, measured along the axes, is at most h.
+                double reach = half * (Math.Abs(dx) + Math.Abs(dy));
+
+                foreach (var v in grid.Query(
+                    Math.Min(a.x, b.x) - half, Math.Min(a.y, b.y) - half,
+                    Math.Max(a.x, b.x) + half, Math.Max(a.y, b.y) + half))
+                {
+                    if (SameLocation(v, a) || SameLocation(v, b))
+                    {
+                        continue;
+                    }
+
+                    double t = Parameter(a, b, v);
+
+                    if (t > 0.0 && t < 1.0 && Math.Abs(dx * (v.y - a.y) - dy * (v.x - a.x)) <= reach &&
+                        !retired.Contains((a, v)) && !retired.Contains((v, b)))
+                    {
+                        AddSplit(splits, i, t, v);
+                    }
+                }
+            }
+        }
+
+        private static bool TryNode(IPolygon polygon, IPredicates predicates, double tolerance, double wedgeTolerance,
             int maxIterations, int maxNewPoints, out IPolygon result)
         {
             result = polygon;
@@ -177,6 +456,11 @@ namespace TriangleNet.Meshing
                 if (splits.Count == 0)
                 {
                     AddNearbyVertices(segments, vertices.All, tolerance, retired, splits);
+                }
+
+                if (splits.Count == 0 && wedgeTolerance > tolerance)
+                {
+                    AddWedgeVertices(segments, vertices.All, tolerance, wedgeTolerance, retired, splits);
                 }
 
                 if (splits.Count == 0)
@@ -514,6 +798,89 @@ namespace TriangleNet.Meshing
                     double t = ((v.x - a.x) * dx + (v.y - a.y) * dy) / (length * length);
 
                     if (distance <= tolerance && t > 0.0 && t < 1.0 &&
+                        !retired.Contains((a, v)) && !retired.Contains((v, b)))
+                    {
+                        AddSplit(splits, i, t, v);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Find vertices closer than the wedge tolerance to a segment (a, b), which are connected
+        /// to a or b by a segment forming a small angle with (a, b).
+        /// </summary>
+        private static void AddWedgeVertices(List<ISegment> segments, ICollection<Vertex> vertices,
+            double tolerance, double wedgeTolerance, HashSet<(Vertex, Vertex)> retired,
+            Dictionary<int, List<(double, Vertex)>> splits)
+        {
+            var neighbors = new Dictionary<Vertex, List<Vertex>>(new ReferenceComparer());
+
+            void Connect(Vertex p, Vertex q)
+            {
+                if (!neighbors.TryGetValue(p, out var list))
+                {
+                    list = new List<Vertex>(4);
+                    neighbors.Add(p, list);
+                }
+
+                list.Add(q);
+            }
+
+            foreach (var s in segments)
+            {
+                Connect(s.GetVertex(0), s.GetVertex(1));
+                Connect(s.GetVertex(1), s.GetVertex(0));
+            }
+
+            double cosMax = Math.Cos(MaxWedgeAngle * Math.PI / 180.0);
+
+            // Is v connected to the apex by a segment forming a small angle with (apex, other)?
+            bool IsWedge(Vertex v, Vertex apex, Vertex other)
+            {
+                if (!neighbors.TryGetValue(v, out var list) || !list.Any(w => SameLocation(w, apex)))
+                {
+                    return false;
+                }
+
+                double ux = v.x - apex.x, uy = v.y - apex.y;
+                double vx = other.x - apex.x, vy = other.y - apex.y;
+
+                double dot = ux * vx + uy * vy;
+
+                return dot > 0.0 && dot * dot >= cosMax * cosMax * (ux * ux + uy * uy) * (vx * vx + vy * vy);
+            }
+
+            var grid = new VertexGrid(vertices);
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var a = segments[i].GetVertex(0);
+                var b = segments[i].GetVertex(1);
+
+                double dx = b.x - a.x, dy = b.y - a.y;
+                double length = Math.Sqrt(dx * dx + dy * dy);
+
+                if (length == 0.0)
+                {
+                    continue;
+                }
+
+                foreach (var v in grid.Query(
+                    Math.Min(a.x, b.x) - wedgeTolerance, Math.Min(a.y, b.y) - wedgeTolerance,
+                    Math.Max(a.x, b.x) + wedgeTolerance, Math.Max(a.y, b.y) + wedgeTolerance))
+                {
+                    if (SameLocation(v, a) || SameLocation(v, b) ||
+                        Distance(v, a) <= tolerance || Distance(v, b) <= tolerance)
+                    {
+                        continue;
+                    }
+
+                    double distance = Math.Abs(dx * (v.y - a.y) - dy * (v.x - a.x)) / length;
+                    double t = ((v.x - a.x) * dx + (v.y - a.y) * dy) / (length * length);
+
+                    if (distance <= wedgeTolerance && t > 0.0 && t < 1.0 &&
+                        (IsWedge(v, a, b) || IsWedge(v, b, a)) &&
                         !retired.Contains((a, v)) && !retired.Contains((v, b)))
                     {
                         AddSplit(splits, i, t, v);

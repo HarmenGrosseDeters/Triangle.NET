@@ -24,7 +24,7 @@ namespace TriangleNet
     {
         #region Variables
 
-        private readonly IPredicates predicates;
+        internal readonly IPredicates predicates;
 
         private readonly Log logger = Log.Instance;
 

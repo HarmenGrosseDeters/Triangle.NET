@@ -26,6 +26,10 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
     ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
+    ///   TRIANGLE_CORPUS_GRID  output grid (ConstraintOptions.GridSize, default 0)
+    ///   TRIANGLE_CORPUS_WEDGE wedge tolerance (ConstraintOptions.WedgeTolerance, default 0)
+    ///   TRIANGLE_CORPUS_ROUND count triangles flipped by rounding to this grid (default 0 = off,
+    ///                         the output grid if set)
     ///   TRIANGLE_CORPUS_ANGLES comma separated minimum angles (default 0,20; 0 = no quality)
     ///
     /// Run: dotnet test --filter TestCategory=Corpus
@@ -114,7 +118,7 @@ namespace TriangleNet.Tests.Corpus
 
             double snap = args.Length > 3 ? double.Parse(args[3], CultureInfo.InvariantCulture) : SnapTolerance();
 
-            Console.WriteLine("RESULT " + CorpusCheck.Run(c, minAngle, SteinerPoints, snap));
+            Console.WriteLine("RESULT " + CorpusCheck.Run(c, minAngle, SteinerPoints, snap, Grid("TRIANGLE_CORPUS_GRID"), Grid("TRIANGLE_CORPUS_ROUND"), Grid("TRIANGLE_CORPUS_WEDGE")));
 
             return 0;
         }
@@ -168,7 +172,8 @@ namespace TriangleNet.Tests.Corpus
 
                 TestContext.Out.WriteLine($"  min angle {g.Key}: total {stats.Sum(r => r.Stats["ms"]) / 1000:F1} s, " +
                     $"{stats.Sum(r => r.Stats["triangles"])} triangles, Steiner limit reached x {stats.Count(r => r.Stats["limit"] > 0)}, " +
-                    $"bad triangles {stats.Sum(r => r.Stats["bad"])} ({100.0 * stats.Sum(r => r.Stats["bad"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %) in {stats.Count(r => r.Stats["bad"] > 0)} cases");
+                    $"bad triangles {stats.Sum(r => r.Stats["bad"])} ({100.0 * stats.Sum(r => r.Stats["bad"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %) in {stats.Count(r => r.Stats["bad"] > 0)} cases, " +
+                    $"flipped by rounding {stats.Sum(r => r.Stats["flip"])} in {stats.Count(r => r.Stats["flip"] > 0)} cases");
 
                 foreach (var r in stats.OrderByDescending(r => r.Stats["ms"]).Take(5))
                 {
@@ -199,6 +204,9 @@ namespace TriangleNet.Tests.Corpus
 
         private static double SnapTolerance() =>
             double.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_SNAP"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0.0;
+
+        private static double Grid(string variable) =>
+            double.TryParse(Environment.GetEnvironmentVariable(variable), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0.0;
 
         private static double TileSize() =>
             double.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_TILE"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 200.0;
