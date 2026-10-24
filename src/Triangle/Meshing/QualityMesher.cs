@@ -140,6 +140,16 @@ namespace TriangleNet.Meshing
         /// </remarks>
         public int CheckSeg4Encroach(ref Osub testsubseg)
         {
+            return CheckSeg4Encroach(ref testsubseg, null);
+        }
+
+        /// <summary>
+        /// Check a subsegment for encroachment (see above). If <paramref name="apex1"/> is not
+        /// null, it is used as the apex of the triangle on the subsegment's side (the vertex
+        /// that would be inserted there).
+        /// </summary>
+        private int CheckSeg4Encroach(ref Osub testsubseg, Vertex apex1, bool enqueue = true)
+        {
             Otri neighbortri = default(Otri);
             Osub testsym = default(Osub);
             BadSubseg encroachedseg;
@@ -160,7 +170,7 @@ namespace TriangleNet.Meshing
             {
                 sides++;
                 // Find a vertex opposite this subsegment.
-                eapex = neighbortri.Apex();
+                eapex = apex1 ?? neighbortri.Apex();
                 // Check whether the apex is in the diametral lens of the subsegment
                 // (the diametral circle if 'conformdel' is set).  A dot product
                 // of two sides of the triangle is used to check whether the angle
@@ -210,7 +220,7 @@ namespace TriangleNet.Meshing
                 }
             }
 
-            if (encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))) &&
+            if (enqueue && encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))) &&
                 CanSplit(testsubseg.seg))
             {
                 // Add the subsegment to the list of encroached subsegments.
@@ -839,7 +849,13 @@ namespace TriangleNet.Meshing
                         // Insert the circumcenter, searching from the edge of the triangle,
                         // and maintain the Delaunay property of the triangulation.
                         Osub tmp = default(Osub);
-                        success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
+
+                        // Check for encroached subsegments before modifying the mesh (inserting
+                        // and undoing a vertex with a large cavity is expensive).
+                        bool encroaches = EncroachesBeforeInsertion(newvertex, badotri);
+
+                        success = encroaches ? InsertVertexResult.Encroaching
+                            : mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
 
                         if (success == InsertVertexResult.Successful)
                         {
@@ -872,7 +888,10 @@ namespace TriangleNet.Meshing
                         {
                             // If the newly inserted vertex encroaches upon a subsegment,
                             // delete the new vertex.
-                            mesh.UndoVertex();
+                            if (!encroaches)
+                            {
+                                mesh.UndoVertex();
+                            }
                         }
                         else if (success == InsertVertexResult.Violating)
                         {
@@ -902,6 +921,175 @@ namespace TriangleNet.Meshing
                     }
                 }
             }
+        }
+
+        // Work data of EncroachesBeforeInsertion.
+        private readonly HashSet<Triangle> cavity = new HashSet<Triangle>();
+        private readonly Stack<Otri> cavityStack = new Stack<Otri>();
+        private readonly Dictionary<Vertex, Otri> cavityBoundary = new Dictionary<Vertex, Otri>();
+        private readonly List<Osub> cavitySubsegs = new List<Osub>();
+        private readonly List<Osub> cavityEncroached = new List<Osub>();
+
+        // Cavity size (number of triangles) from which the search stops at the first encroached
+        // subsegments.
+        private const int LargeCavity = 64;
+
+        /// <summary>
+        /// Determine, without modifying the mesh, whether inserting the vertex would encroach
+        /// upon a subsegment. If so, the encroached subsegments are queued exactly as
+        /// <see cref="Mesh.InsertVertex"/> would do it, and true is returned (the vertex must not
+        /// be inserted).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Mesh.InsertVertex"/> inserts the vertex, flips edges and checks each
+        /// subsegment on the boundary of the resulting cavity (counterclockwise around the vertex,
+        /// starting at the origin of the located triangle). For a large cavity (needle-shaped
+        /// regions), inserting and undoing the vertex is quadratic in practice. Here, the cavity
+        /// is found with the same incircle tests, and its boundary subsegments are checked in the
+        /// same order. If the situation isn't a plain one (vertex not inside a triangle, cavity
+        /// on both sides of a subsegment, non-simple boundary), false is returned and the regular
+        /// insertion decides.
+        ///
+        /// For large cavities, the search stops as soon as encroached subsegments have been found
+        /// (they are queued in the order found). Inserting the vertex is futile anyway, and the
+        /// remaining encroached subsegments are found when the triangle is tried again.
+        /// </remarks>
+        private bool EncroachesBeforeInsertion(Vertex v, Otri searchtri)
+        {
+            if (!mesh.checksegments)
+            {
+                return false;
+            }
+
+            Otri horiz = default(Otri);
+            searchtri.Copy(ref horiz);
+
+            if (mesh.locator.PreciseLocate(v, ref horiz, true) != LocateResult.InTriangle)
+            {
+                return false;
+            }
+
+            cavity.Clear();
+            cavityStack.Clear();
+            cavityBoundary.Clear();
+            cavitySubsegs.Clear();
+            cavityEncroached.Clear();
+
+            Otri tri = default(Otri), neighbor = default(Otri);
+            Osub sub = default(Osub);
+
+            cavity.Add(horiz.tri);
+            cavityStack.Push(horiz);
+
+            while (cavityStack.Count > 0)
+            {
+                tri = cavityStack.Pop();
+
+                for (tri.orient = 0; tri.orient < 3; tri.orient++)
+                {
+                    tri.Pivot(ref sub);
+
+                    if (sub.seg.hash == Mesh.DUMMY)
+                    {
+                        tri.Sym(ref neighbor);
+
+                        if (neighbor.tri.id != Mesh.DUMMY)
+                        {
+                            if (cavity.Contains(neighbor.tri))
+                            {
+                                continue;
+                            }
+
+                            // Same test (and argument order) as in Mesh.InsertVertex.
+                            if (predicates.InCircle(tri.Dest(), v, tri.Org(), neighbor.Apex()) > 0.0)
+                            {
+                                cavity.Add(neighbor.tri);
+                                cavityStack.Push(neighbor);
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Boundary edge of the cavity (the cavity is on its left side).
+                    var org = tri.Org();
+
+                    if (cavityBoundary.ContainsKey(org))
+                    {
+                        return false;
+                    }
+
+                    cavityBoundary.Add(org, tri);
+
+                    if (sub.seg.hash != Mesh.DUMMY && CheckSeg4Encroach(ref sub, v, false) > 0)
+                    {
+                        cavityEncroached.Add(sub);
+                    }
+                }
+
+                if (cavity.Count > LargeCavity && cavityEncroached.Count > 0)
+                {
+                    for (int i = 0; i < cavityEncroached.Count; i++)
+                    {
+                        sub = cavityEncroached[i];
+                        CheckSeg4Encroach(ref sub, v);
+                    }
+
+                    return true;
+                }
+            }
+
+            // Walk along the boundary (counterclockwise around v) and collect the subsegments.
+            var start = horiz.Org();
+            var u = start;
+            int count = 0;
+
+            do
+            {
+                if (!cavityBoundary.TryGetValue(u, out tri))
+                {
+                    return false;
+                }
+
+                tri.Pivot(ref sub);
+
+                if (sub.seg.hash != Mesh.DUMMY)
+                {
+                    // The triangle on the other side must not be part of the cavity.
+                    Osub sym = default(Osub);
+                    sub.Sym(ref sym);
+                    sym.Pivot(ref neighbor);
+
+                    if (neighbor.tri.id != Mesh.DUMMY && cavity.Contains(neighbor.tri))
+                    {
+                        return false;
+                    }
+
+                    cavitySubsegs.Add(sub);
+                }
+
+                u = tri.Dest();
+                count++;
+            }
+            while (u != start && count <= cavityBoundary.Count);
+
+            if (u != start || count != cavityBoundary.Count)
+            {
+                return false;
+            }
+
+            bool encroached = false;
+
+            for (int i = 0; i < cavitySubsegs.Count; i++)
+            {
+                sub = cavitySubsegs[i];
+
+                if (CheckSeg4Encroach(ref sub, v) > 0)
+                {
+                    encroached = true;
+                }
+            }
+
+            return encroached;
         }
 
         /// <summary>

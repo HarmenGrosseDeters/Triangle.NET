@@ -216,6 +216,22 @@ namespace TriangleNet.Tests.Robustness
 
             MeshAssert.IsValid(mesh);
         }
+
+        [Test]
+        [Description("Fixed: in needle-shaped regions, refinement inserted circumcenters with huge cavities, found an " +
+            "encroached segment and undid everything (60,000 points: 78 s, now about 2 s in a release build).")]
+        public void NeedleRefinementIsNotQuadratic()
+        {
+            var poly = new Polygon();
+            poly.Add(new Contour(new[] { new Vertex(101, 99), new Vertex(101, 1000000), new Vertex(102, 1000000) }));
+            poly.Add(new Contour(new[] { new Vertex(100, 100), new Vertex(1000000, 110), new Vertex(1000000, 100) }));
+            poly.Add(TestData.Square(-100000, -100000, 1200000));
+
+            var mesh = MeshAssert.Terminates(() => poly.Triangulate(new QualityOptions { MinimumAngle = 20, SteinerPoints = 60000 }), LongTimeout);
+
+            MeshAssert.IsValid(mesh);
+            Assert.That(mesh.Vertices.Count, Is.GreaterThan(50000));
+        }
         private static Polygon ParcelWithBuilding(double gap)
         {
             // A parcel and a building whose wall runs along the parcel boundary at a distance
