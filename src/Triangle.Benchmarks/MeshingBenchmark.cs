@@ -30,6 +30,8 @@ namespace TriangleNet.Benchmarks
             "herne_371800_5710600/q20-snap1cm",
             "herne_373600_5709000/q20-snap1cm",
             "herne_373600_5709000/q30-snap1cm",
+            "herne_371800_5710600/q20-grid1cm-wedge3cm",
+            "herne_373600_5709000/q30-grid1cm-wedge3cm",
         };
 
         private MeshCases.Case scenario;
@@ -51,7 +53,7 @@ namespace TriangleNet.Benchmarks
         [GlobalSetup]
         public void Setup()
         {
-            scenario = MeshCases.All().First(c => c.Name == Scenario);
+            scenario = MeshCases.All().Concat(MeshCases.GridCases()).First(c => c.Name == Scenario);
         }
 
         [Benchmark]

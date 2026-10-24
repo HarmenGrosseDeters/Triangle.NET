@@ -142,6 +142,23 @@ namespace TriangleNet.Tests.Characterization
             }
         }
 
+        /// <summary>
+        /// Scenarios for benchmarks only: with an output grid the mesh isn't exactly Delaunay,
+        /// so the invariant checks don't apply.
+        /// </summary>
+        public static IEnumerable<Case> GridCases()
+        {
+            foreach (var tile in new[] { "herne_371800_5710600", "herne_373600_5709000" })
+            {
+                IPolygon Tile() => LoadTile(tile);
+
+                var options = new ConstraintOptions { SnapTolerance = 0.01, GridSize = 0.01, WedgeTolerance = 0.03 };
+
+                yield return Quality(tile + "/q20-grid1cm-wedge3cm", Tile, options, 20);
+                yield return Quality(tile + "/q30-grid1cm-wedge3cm", Tile, options, 30);
+            }
+        }
+
         private static Case Points(string name, Func<IPolygon> input, Func<ITriangulator> algorithm)
         {
             return new Case
