@@ -67,6 +67,18 @@ namespace TriangleNet.Meshing.Algorithm
             int heapsize;
             bool check4events, farrightflag = false;
 
+            if (mesh.bounds.Width == 0.0 && mesh.bounds.Height == 0.0)
+            {
+                // All input vertices are identical, so there is no triangulation.
+                for (int i = 1; i < points.Count; i++)
+                {
+                    points[i].type = VertexType.UndeadVertex;
+                    mesh.undeads++;
+                }
+
+                return mesh;
+            }
+
             splaynodes = new List<SplayNode>();
             splayroot = null;
 
@@ -254,7 +266,49 @@ namespace TriangleNet.Meshing.Algorithm
 
             this.mesh.hullsize = RemoveGhosts(ref bottommost);
 
+            // The order of circle events is computed using inexact arithmetic, so for
+            // nearly cocircular vertices the triangulation might not be Delaunay.
+            RestoreDelaunay();
+
             return this.mesh;
+        }
+
+        /// <summary>
+        /// Flip all edges which are not locally Delaunay (using exact predicates).
+        /// </summary>
+        private void RestoreDelaunay()
+        {
+            Otri tri = default(Otri);
+            Otri oppo = default(Otri);
+
+            bool flipped = true;
+
+            while (flipped)
+            {
+                flipped = false;
+
+                foreach (var t in mesh.triangles)
+                {
+                    tri.tri = t;
+
+                    for (tri.orient = 0; tri.orient < 3; tri.orient++)
+                    {
+                        tri.Sym(ref oppo);
+
+                        // Test each edge only once.
+                        if (oppo.tri.id == Mesh.DUMMY || tri.tri.id > oppo.tri.id)
+                        {
+                            continue;
+                        }
+
+                        if (predicates.InCircle(tri.Org(), tri.Dest(), tri.Apex(), oppo.Apex()) > 0.0)
+                        {
+                            mesh.Flip(ref tri);
+                            flipped = true;
+                        }
+                    }
+                }
+            }
         }
 
         #region Heap

@@ -96,7 +96,8 @@ namespace TriangleNet.Topology.DCEL
             this.face = face;
 
             // IMPORTANT: do not remove the (face.edge == null) check!
-            if (face != null && face.edge == null)
+            // The shared Face.Empty must not reference an edge of a particular mesh.
+            if (face != null && face.edge == null && face != Face.Empty)
             {
                 face.edge = this;
             }

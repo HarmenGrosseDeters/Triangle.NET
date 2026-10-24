@@ -85,16 +85,17 @@ namespace TriangleNet.Geometry
         /// Try to find a point inside the contour.
         /// </summary>
         /// <param name="limit">The number of iterations on each segment (default = 5).</param>
-        /// <param name="eps">Threshold for co-linear points (default = 2e-5).</param>
+        /// <param name="eps">Not used anymore (all directions are tried).</param>
         /// <returns>Point inside the contour</returns>
-        /// <exception cref="Exception">Throws if no point could be found.</exception>
+        /// <exception cref="InvalidOperationException">Throws if no point could be found.</exception>
         /// <remarks>
         /// For each corner (index i) of the contour, the 3 points with indices i-1, i and i+1
-        /// are considered and a search on the line through the corner vertex is started (either
-        /// on the bisecting line, or, if <see cref="IPredicates.CounterClockwise"/> is less than
-        /// eps, on the perpendicular line.
-        /// A given number of points will be tested (limit), while the distance to the contour
-        /// boundary will be reduced in each iteration (with a factor 1 / 2^i, i = 1 ... limit).
+        /// are considered and a search on the bisecting line and on the line perpendicular to
+        /// the neighbors is started, in both directions. A given number of points will be tested
+        /// (limit), while the distance to the corner is halved in each iteration. A point must be
+        /// strictly inside (exact predicates) and is accepted, if its distance to the boundary
+        /// is at least 10% of its distance to the corner; otherwise the point with the largest
+        /// distance to the boundary is returned.
         /// </remarks>
         public Point FindInteriorPoint(int limit = 5, double eps = 2e-5)
         {
@@ -139,139 +140,143 @@ namespace TriangleNet.Geometry
 
         private static Point FindPointInPolygon(List<Vertex> contour, int limit, double eps)
         {
-            var bounds = new Rectangle();
-            bounds.Expand(contour);
-
+            // Candidates are searched near the corners: in the direction of the angle bisector
+            // and perpendicular to the line through the neighbors (both ways), at decreasing
+            // distances. A candidate must lie strictly inside (exact predicates) and should keep
+            // a distance to the boundary that is not tiny compared to the search distance
+            // (otherwise rounding, or snapping of the contour while meshing, could move it to the
+            // other side). If no candidate meets that, the one with the largest clearance is used.
             int length = contour.Count;
 
-            var test = new Point();
-
-            Point a, b, c; // Current corner points.
-
-            double bx, by;
-            double dx, dy;
-            double h;
+            if (length < 3)
+            {
+                throw new InvalidOperationException("A contour needs at least three points.");
+            }
 
             var predicates = RobustPredicates.Default;
 
-            a = contour[0];
-            b = contour[1];
+            var test = new Point();
+            Point best = null;
+            double bestClearance = 0.0;
+
+            Point a = contour[length - 1], b, c;
 
             for (int i = 0; i < length; i++)
             {
-                c = contour[(i + 2) % length];
+                b = contour[i];
+                c = contour[(i + 1) % length];
 
-                // Corner point.
-                bx = b.x;
-                by = b.y;
-
-                // NOTE: if we knew the contour points were in counterclockwise order, we
-                // could skip concave corners and search only in one direction.
-
-                h = predicates.CounterClockwise(a, b, c);
-
-                if (Math.Abs(h) < eps)
+                for (int direction = 0; direction < 2; direction++)
                 {
-                    // Points are nearly co-linear. Use perpendicular direction.
-                    dx = (c.y - a.y) / 2;
-                    dy = (a.x - c.x) / 2;
-                }
-                else
-                {
-                    // Direction [midpoint(a-c) -> corner point]
-                    dx = (a.x + c.x) / 2 - bx;
-                    dy = (a.y + c.y) / 2 - by;
+                    double dx, dy;
+
+                    if (direction == 0)
+                    {
+                        // Direction [corner point -> midpoint(a-c)].
+                        dx = (a.x + c.x) / 2 - b.x;
+                        dy = (a.y + c.y) / 2 - b.y;
+                    }
+                    else
+                    {
+                        // Perpendicular to a-c.
+                        dx = (c.y - a.y) / 2;
+                        dy = (a.x - c.x) / 2;
+                    }
+
+                    double h = 1.0;
+
+                    for (int j = 0; j <= limit; j++, h /= 2)
+                    {
+                        for (int sign = -1; sign <= 1; sign += 2)
+                        {
+                            test.x = b.x + sign * dx * h;
+                            test.y = b.y + sign * dy * h;
+
+                            if (!IsStrictlyInside(test, contour, predicates))
+                            {
+                                continue;
+                            }
+
+                            double clearance = DistanceToBoundary(test, contour);
+                            double offset = h * Math.Sqrt(dx * dx + dy * dy);
+
+                            if (clearance >= 0.1 * offset)
+                            {
+                                return new Point(test.x, test.y);
+                            }
+
+                            if (clearance > bestClearance)
+                            {
+                                bestClearance = clearance;
+                                best = new Point(test.x, test.y);
+                            }
+                        }
+                    }
                 }
 
-                // Move around the contour.
                 a = b;
-                b = c;
-
-                h = 1.0;
-
-                for (int j = 0; j < limit; j++)
-                {
-                    // Search in direction.
-                    test.x = bx + dx * h;
-                    test.y = by + dy * h;
-
-                    if (bounds.Contains(test) && IsPointInPolygon(test, contour) && !IsPointOnSegment(test, contour))
-                    {
-                        return test;
-                    }
-
-                    // Search in opposite direction (see NOTE above).
-                    test.x = bx - dx * h;
-                    test.y = by - dy * h;
-
-                    if (bounds.Contains(test) && IsPointInPolygon(test, contour) && !IsPointOnSegment(test, contour))
-                    {
-                        return test;
-                    }
-
-                    h = h / 2;
-                }
             }
 
-            throw new Exception();
+            if (best == null)
+            {
+                throw new InvalidOperationException("Could not find a point inside the contour (degenerate or self-intersecting contour?).");
+            }
+
+            return best;
         }
 
         /// <summary>
-        /// Return true if the given point is inside the polygon, or false if it is not.
+        /// Exact point in polygon test (winding number). Points on the boundary are not inside.
         /// </summary>
-        /// <param name="point">The point to check.</param>
-        /// <param name="poly">The polygon (list of contour points).</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// WARNING: If the point is exactly on the edge of the polygon, then the function
-        /// may return true or false.
-        /// 
-        /// See http://alienryderflex.com/polygon/
-        /// </remarks>
-        private static bool IsPointInPolygon(Point point, List<Vertex> poly)
+        private static bool IsStrictlyInside(Point p, List<Vertex> poly, IPredicates predicates)
         {
-            bool inside = false;
-
-            double x = point.x;
-            double y = point.y;
-
+            int winding = 0;
             int count = poly.Count;
 
-            for (int i = 0, j = count - 1; i < count; i++)
+            for (int i = 0, j = count - 1; i < count; j = i++)
             {
-                if (((poly[i].y < y && poly[j].y >= y) || (poly[j].y < y && poly[i].y >= y))
-                    && (poly[i].x <= x || poly[j].x <= x))
+                Point q0 = poly[j], q1 = poly[i];
+
+                double orient = predicates.CounterClockwise(q0, q1, p);
+
+                if (orient == 0.0 &&
+                    Math.Min(q0.x, q1.x) <= p.x && p.x <= Math.Max(q0.x, q1.x) &&
+                    Math.Min(q0.y, q1.y) <= p.y && p.y <= Math.Max(q0.y, q1.y))
                 {
-                    inside ^= (poly[i].x + (y - poly[i].y) / (poly[j].y - poly[i].y) * (poly[j].x - poly[i].x) < x);
+                    // On the boundary.
+                    return false;
                 }
 
-                j = i;
+                if (q0.y <= p.y)
+                {
+                    if (q1.y > p.y && orient > 0.0) winding++;
+                }
+                else if (q1.y <= p.y && orient < 0.0)
+                {
+                    winding--;
+                }
             }
 
-            return inside;
+            return winding != 0;
         }
 
-
-        /// <summary>
-        /// Work around IsPointInPolygon() failing for points on segments.
-        /// </summary>
-        private static bool IsPointOnSegment(Point test, List<Vertex> contour, double eps = 1e-12)
+        private static double DistanceToBoundary(Point p, List<Vertex> poly)
         {
-            int count = contour.Count;
+            double min = double.MaxValue;
+            int count = poly.Count;
 
-            int i = count - 1;
-
-            for (int j = 0; j < count; j++)
+            for (int i = 0, j = count - 1; i < count; j = i++)
             {
-                if (IntersectionHelper.IsPointOnSegment(contour[i], contour[j], test, eps))
-                {
-                    return true;
-                }
+                Point q0 = poly[j], q1 = poly[i];
 
-                i = j;
+                double dx = q1.x - q0.x, dy = q1.y - q0.y, l2 = dx * dx + dy * dy;
+                double t = l2 == 0.0 ? 0.0 : Math.Max(0.0, Math.Min(1.0, ((p.x - q0.x) * dx + (p.y - q0.y) * dy) / l2));
+                double ex = q0.x + t * dx - p.x, ey = q0.y + t * dy - p.y;
+
+                min = Math.Min(min, ex * ex + ey * ey);
             }
 
-            return false;
+            return Math.Sqrt(min);
         }
 
         #endregion

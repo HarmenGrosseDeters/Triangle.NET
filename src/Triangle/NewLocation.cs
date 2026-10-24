@@ -27,6 +27,58 @@ namespace TriangleNet
         Mesh mesh;
         Behavior behavior;
 
+        // Per-call work arrays (reused instead of allocated on every call; cleared where the
+        // original code allocated them, so the values are the same).
+        readonly double[] workFindNewLocationWithoutMaxAngle_thirdPoint = new double[2];
+        readonly double[] workFindNewLocationWithoutMaxAngle_p = new double[5];
+        readonly double[] workFindNewLocationWithoutMaxAngle_voronoiOrInter = new double[4];
+        readonly double[] workFindNewLocationWithoutMaxAngle_newloc = new double[2];
+        readonly double[] workFindNewLocation_thirdPoint = new double[2];
+        readonly double[] workFindNewLocation_p = new double[5];
+        readonly double[] workFindNewLocation_voronoiOrInter = new double[4];
+        readonly double[] workFindNewLocation_newloc = new double[2];
+        readonly double[] workFindNewLocation_line_p = new double[3];
+        readonly double[] workFindNewLocation_line_result = new double[4];
+        readonly double[] workDoSmoothing_possibilities = new double[6];
+        readonly double[] workGetStarPoints_returnPoint = new double[2];
+        readonly double[] workGetWedgeIntersectionWithoutMaxAngle_p1 = new double[3];
+        readonly double[] workGetWedgeIntersectionWithoutMaxAngle_cos = new double[4];
+        readonly double[] workGetWedgeIntersectionWithoutMaxAngle_sin = new double[4];
+        readonly double[] workGetWedgeIntersection_p1 = new double[3];
+        readonly double[] workGetWedgeIntersection_p2 = new double[3];
+        readonly double[] workGetWedgeIntersection_p3 = new double[3];
+        readonly double[] workGetWedgeIntersection_p4 = new double[3];
+        readonly double[] workSplitConvexPolygon_p = new double[3];
+
+        // Vertices created by relocation. They are not relocated again, otherwise the same
+        // vertex can be moved back and forth forever without refining the mesh.
+        readonly System.Collections.Generic.HashSet<Vertex> relocatedVertices = new System.Collections.Generic.HashSet<Vertex>();
+
+        /// <summary>
+        /// Gets a value indicating whether the last call to <see cref="FindLocation"/> deleted
+        /// a vertex of the triangle to relocate it (the returned location is the new position
+        /// of the deleted vertex, and the triangle doesn't exist anymore).
+        /// </summary>
+        internal bool Relocated { get; private set; }
+
+        /// <summary>
+        /// Mark a vertex inserted at a relocated position.
+        /// </summary>
+        internal void MarkRelocated(Vertex v)
+        {
+            relocatedVertices.Add(v);
+        }
+
+        /// <summary>
+        /// Size of the grid Steiner points are rounded to (0 = no rounding).
+        /// </summary>
+        /// <remarks>
+        /// With a grid, vertices aren't relocated: the rounded position may coincide with the
+        /// old one, or inserting it may fail (the deleted vertex is lost then), so the same
+        /// vertex would be deleted and reinserted forever.
+        /// </remarks>
+        internal double GridSize { get; set; }
+
         // Work arrays for wegde intersection
         double[] petalx = new double[20];
         double[] petaly = new double[20];
@@ -66,6 +118,8 @@ namespace TriangleNet
         public Point FindLocation(Vertex org, Vertex dest, Vertex apex,
             ref double xi, ref double eta, bool offcenter, Otri badotri)
         {
+            Relocated = false;
+
             // Based on using -U switch, call the corresponding function
             if (behavior.MaxAngle == 0.0)
             {
@@ -126,7 +180,7 @@ namespace TriangleNet
             double dxcenter1, dycenter1, dxcenter2, dycenter2;
             // for finding neighbor
             Otri neighborotri = default(Otri);
-            double[] thirdPoint = new double[2];
+            double[] thirdPoint = workFindNewLocationWithoutMaxAngle_thirdPoint; Array.Clear(thirdPoint, 0, 2);
             //int neighborNotFound = -1;
             bool neighborNotFound;
             // for keeping the vertices of the neighbor triangle
@@ -138,7 +192,8 @@ namespace TriangleNet
             //vertex thirdVertex;
             // for petal intersection
             double vector_x, vector_y, xMidOfLongestEdge, yMidOfLongestEdge, inter_x, inter_y;
-            double[] p = new double[5], voronoiOrInter = new double[4];
+            double[] p = workFindNewLocationWithoutMaxAngle_p; Array.Clear(p, 0, 5);
+            double[] voronoiOrInter = workFindNewLocationWithoutMaxAngle_voronoiOrInter; Array.Clear(voronoiOrInter, 0, 4);
             bool isCorrect;
 
             // for vector calculations in perturbation
@@ -149,7 +204,7 @@ namespace TriangleNet
             double justAcute = 1; // used for making the program working for one direction only
             // for smoothing
             int relocated = 0;// used to differentiate between calling the deletevertex and just proposing a steiner point
-            double[] newloc = new double[2];   // new location suggested by smoothing
+            double[] newloc = workFindNewLocationWithoutMaxAngle_newloc; Array.Clear(newloc, 0, 2);   // new location suggested by smoothing
             double origin_x = 0, origin_y = 0; // for keeping torg safe
             Otri delotri; // keeping the original orientation for relocation process
             // keeps the first and second direction suggested points
@@ -385,11 +440,13 @@ namespace TriangleNet
                 }
                 //- RELOCATION	(LOCAL SMOOTHING) -//
                 // check for possible relocation of one of triangle's points
-                relocated = DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                // With a grid, vertices aren't relocated (see GridSize).
+                relocated = GridSize > 0.0 ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {
                     Statistic.RelocationCount++;
+                    Relocated = true;
 
                     dx = newloc[0] - torg.x;
                     dy = newloc[1] - torg.y;
@@ -813,7 +870,7 @@ namespace TriangleNet
             double dxcenter1, dycenter1, dxcenter2, dycenter2;
             // for finding neighbor
             Otri neighborotri = default(Otri);
-            double[] thirdPoint = new double[2];
+            double[] thirdPoint = workFindNewLocation_thirdPoint; Array.Clear(thirdPoint, 0, 2);
             //int neighborNotFound = -1;
             // for keeping the vertices of the neighbor triangle
             Vertex neighborvertex_1;
@@ -824,7 +881,8 @@ namespace TriangleNet
             //vertex thirdVertex;
             // for petal intersection
             double vector_x, vector_y, xMidOfLongestEdge, yMidOfLongestEdge, inter_x, inter_y;
-            double[] p = new double[5], voronoiOrInter = new double[4];
+            double[] p = workFindNewLocation_p; Array.Clear(p, 0, 5);
+            double[] voronoiOrInter = workFindNewLocation_voronoiOrInter; Array.Clear(voronoiOrInter, 0, 4);
             bool isCorrect;
 
             // for vector calculations in perturbation
@@ -835,7 +893,7 @@ namespace TriangleNet
             double justAcute = 1; // used for making the program working for one direction only
             // for smoothing
             int relocated = 0;// used to differentiate between calling the deletevertex and just proposing a steiner point
-            double[] newloc = new double[2];   // new location suggested by smoothing
+            double[] newloc = workFindNewLocation_newloc; Array.Clear(newloc, 0, 2);   // new location suggested by smoothing
             double origin_x = 0, origin_y = 0; // for keeping torg safe
             Otri delotri; // keeping the original orientation for relocation process
             // keeps the first and second direction suggested points
@@ -848,8 +906,8 @@ namespace TriangleNet
             double linepnt1_x, linepnt1_y, linepnt2_x, linepnt2_y;	// two points of the line
             double line_inter_x = 0, line_inter_y = 0;
             double line_vector_x, line_vector_y;
-            double[] line_p = new double[3]; // used for getting the return values of functions related to line intersection
-            double[] line_result = new double[4];
+            double[] line_p = workFindNewLocation_line_p; Array.Clear(line_p, 0, 3); // used for getting the return values of functions related to line intersection
+            double[] line_result = workFindNewLocation_line_result; Array.Clear(line_result, 0, 4);
             // intersection of slab and the petal
             double petal_slab_inter_x_first, petal_slab_inter_y_first, petal_slab_inter_x_second, petal_slab_inter_y_second, x_1, y_1, x_2, y_2;
             double petal_bisector_x, petal_bisector_y, dist;
@@ -1085,11 +1143,13 @@ namespace TriangleNet
                 }
                 // RELOCATION	(LOCAL SMOOTHING)
                 // check for possible relocation of one of triangle's points
-                relocated = DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                // With a grid, vertices aren't relocated (see GridSize).
+                relocated = GridSize > 0.0 ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {
                     Statistic.RelocationCount++;
+                    Relocated = true;
 
                     dx = newloc[0] - torg.x;
                     dy = newloc[1] - torg.y;
@@ -2035,7 +2095,7 @@ namespace TriangleNet
             int numpoints_q = 0;
             int numpoints_r = 0;
             //int i;
-            double[] possibilities = new double[6];//there can be more than one possibilities
+            double[] possibilities = workDoSmoothing_possibilities; Array.Clear(possibilities, 0, 6);//there can be more than one possibilities
             int num_pos = 0; // number of possibilities
             int flag1 = 0, flag2 = 0, flag3 = 0;
             bool newLocFound = false;
@@ -2047,7 +2107,9 @@ namespace TriangleNet
             //********************* TRY TO RELOCATE POINT "p" ***************
 
             // get the surrounding points of p, so this gives us the triangles
-            numpoints_p = GetStarPoints(badotri, torg, tdest, tapex, 1, ref points_p);
+            // Only free vertices can be relocated (checked first, the star is expensive).
+            numpoints_p = torg.type == VertexType.FreeVertex && !relocatedVertices.Contains(torg)
+                ? GetStarPoints(badotri, torg, tdest, tapex, 1, ref points_p) : 0;
             // check if the points in counterclockwise order
             // 	p1[0] = points_p[0];  p1[1] = points_p[1];
             // 	p2[0] = points_p[2];  p2[1] = points_p[3];
@@ -2067,7 +2129,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (torg.type == VertexType.FreeVertex && numpoints_p != 0 && ValidPolygonAngles(numpoints_p, points_p))
+            if (torg.type == VertexType.FreeVertex && !relocatedVertices.Contains(torg) && numpoints_p != 0 && ValidPolygonAngles(numpoints_p, points_p))
             {
                 //newLocFound = getPetalIntersection(m, b, numpoints_p, points_p, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_p, points_p, newloc,torg[0],torg[1]);
@@ -2093,7 +2155,9 @@ namespace TriangleNet
             //********************* TRY TO RELOCATE POINT "q" ***************
 
             // get the surrounding points of q, so this gives us the triangles
-            numpoints_q = GetStarPoints(badotri, torg, tdest, tapex, 2, ref points_q);
+            // Only free vertices can be relocated (checked first, the star is expensive).
+            numpoints_q = tdest.type == VertexType.FreeVertex && !relocatedVertices.Contains(tdest)
+                ? GetStarPoints(badotri, torg, tdest, tapex, 2, ref points_q) : 0;
             // 	// check if the points in counterclockwise order
             // 	v1[0] = points_q[0];  v1[1] = points_q[1];
             // 	v2[0] = points_q[2];  v2[1] = points_q[3];
@@ -2112,7 +2176,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (tdest.type == VertexType.FreeVertex && numpoints_q != 0 && ValidPolygonAngles(numpoints_q, points_q))
+            if (tdest.type == VertexType.FreeVertex && !relocatedVertices.Contains(tdest) && numpoints_q != 0 && ValidPolygonAngles(numpoints_q, points_q))
             {
                 //newLocFound = getPetalIntersection(m, b,numpoints_q, points_q, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_q, points_q, newloc,tapex[0],tapex[1]);
@@ -2139,7 +2203,9 @@ namespace TriangleNet
 
             //********************* TRY TO RELOCATE POINT "q" ***************
             // get the surrounding points of r, so this gives us the triangles
-            numpoints_r = GetStarPoints(badotri, torg, tdest, tapex, 3, ref points_r);
+            // Only free vertices can be relocated (checked first, the star is expensive).
+            numpoints_r = tapex.type == VertexType.FreeVertex && !relocatedVertices.Contains(tapex)
+                ? GetStarPoints(badotri, torg, tdest, tapex, 3, ref points_r) : 0;
             // check if the points in counterclockwise order
             // 	v1[0] = points_r[0];  v1[1] = points_r[1];
             // 	v2[0] = points_r[2];  v2[1] = points_r[3];
@@ -2158,7 +2224,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (tapex.type == VertexType.FreeVertex && numpoints_r != 0 && ValidPolygonAngles(numpoints_r, points_r))
+            if (tapex.type == VertexType.FreeVertex && !relocatedVertices.Contains(tapex) && numpoints_r != 0 && ValidPolygonAngles(numpoints_r, points_r))
             {
                 //newLocFound = getPetalIntersection(m, b,numpoints_r, points_r, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_r, points_r, newloc,tdest[0],tdest[1]);
@@ -2238,7 +2304,7 @@ namespace TriangleNet
             double first_x = 0, first_y = 0;	  // keeps the first point to be considered
             double second_x = 0, second_y = 0;  // for determining the edge we will begin
             double third_x = 0, third_y = 0;	  // termination
-            double[] returnPoint = new double[2];	  // for keeping the returned point
+            double[] returnPoint = workGetStarPoints_returnPoint; Array.Clear(returnPoint, 0, 2);	  // for keeping the returned point
             int numvertices = 0;	  // for keeping number of surrounding vertices
 
             // first determine which point to be used to find its neighbor triangles
@@ -2327,153 +2393,72 @@ namespace TriangleNet
         /// <param name="thirdpoint">Neighbor's third vertex incident to given edge.</param>
         /// <param name="neighotri">Pointer for the neighbor triangle.</param>
         /// <returns>Returns true if vertex was found.</returns>
+        /// <summary>
+        /// Find the neighbor of the triangle across the edge (first, second) and its third vertex.
+        /// </summary>
+        /// <returns>True, if there is no neighbor (the edge is on the boundary).</returns>
+        /// <remarks>
+        /// The original implementation compared the vertex coordinates of all three neighbors.
+        /// The edge is identified by the coordinates of its endpoints (as before), but only the
+        /// neighbor across the matching edge is visited. The returned handle is the same as
+        /// before: the neighbor across the edge, or (if not found) across the edge of
+        /// orientation 2.
+        /// </remarks>
         private bool GetNeighborsVertex(Otri badotri,
                         double first_x, double first_y,
                         double second_x, double second_y,
                         ref double[] thirdpoint, ref Otri neighotri)
         {
+            Otri neighbor = default(Otri);
 
-            Otri neighbor = default(Otri); // keeps the neighbor triangles
-            bool notFound = false;	// boolean variable if we can find that neighbor or not
-
-            // for keeping the vertices of the neighbor triangle
-            Vertex neighborvertex_1 = null;
-            Vertex neighborvertex_2 = null;
-            Vertex neighborvertex_3 = null;
-
-            // used for finding neighbor triangle
-            int firstVertexMatched = 0, secondVertexMatched = 0;	// to find the correct neighbor
-            //triangle ptr;             // Temporary variable used by sym()
-            //int i;	// index variable
-            // find neighbors
-            // Check each of the triangle's three neighbors to find the correct one
             for (badotri.orient = 0; badotri.orient < 3; badotri.orient++)
             {
-                // Find the neighbor.
-                badotri.Sym(ref neighbor);
-                // check if it is the one we are looking for by checking the corners
-                // first check if the neighbor is nonexistent, since it can be on the border
-                if (neighbor.tri.id != Mesh.DUMMY)
+                Vertex org = badotri.Org();
+                Vertex dest = badotri.Dest();
+
+                bool matches = (SameLocation(org, first_x, first_y) && SameLocation(dest, second_x, second_y)) ||
+                               (SameLocation(org, second_x, second_y) && SameLocation(dest, first_x, first_y));
+
+                if (!matches)
                 {
-                    // then check if two wanted corners are also in this triangle
-                    // take the vertices of the candidate neighbor
-                    neighborvertex_1 = neighbor.Org();
-                    neighborvertex_2 = neighbor.Dest();
-                    neighborvertex_3 = neighbor.Apex();
+                    continue;
+                }
 
-                    // check if it is really a triangle
-                    if ((neighborvertex_1.x == neighborvertex_2.x && neighborvertex_1.y == neighborvertex_2.y)
-                     || (neighborvertex_2.x == neighborvertex_3.x && neighborvertex_2.y == neighborvertex_3.y)
-                     || (neighborvertex_1.x == neighborvertex_3.x && neighborvertex_1.y == neighborvertex_3.y))
-                    {
-                        //printf("Two vertices are the same!!!!!!!\n");
-                    }
-                    else
-                    {
-                        // begin searching for the correct neighbor triangle
-                        firstVertexMatched = 0;
-                        if ((Math.Abs(first_x - neighborvertex_1.x) < EPS) &&
-                             (Math.Abs(first_y - neighborvertex_1.y) < EPS))
-                        {
-                            firstVertexMatched = 11; // neighbor's 1st vertex is matched to first vertex
+                badotri.Sym(ref neighbor);
 
-                        }
-                        else if ((Math.Abs(first_x - neighborvertex_2.x) < EPS) &&
-                               (Math.Abs(first_y - neighborvertex_2.y) < EPS))
-                        {
-                            firstVertexMatched = 12; // neighbor's 2nd vertex is matched to first vertex
-
-                        }
-                        else if ((Math.Abs(first_x - neighborvertex_3.x) < EPS) &&
-                                   (Math.Abs(first_y - neighborvertex_3.y) < EPS))
-                        {
-                            firstVertexMatched = 13; // neighbor's 3rd vertex is matched to first vertex
-
-                        }/*else{
-                     // none of them matched
-                } // end of first vertex matching */
-
-                        secondVertexMatched = 0;
-                        if ((Math.Abs(second_x - neighborvertex_1.x) < EPS) &&
-                            (Math.Abs(second_y - neighborvertex_1.y) < EPS))
-                        {
-                            secondVertexMatched = 21; // neighbor's 1st vertex is matched to second vertex
-                        }
-                        else if ((Math.Abs(second_x - neighborvertex_2.x) < EPS) &&
-                           (Math.Abs(second_y - neighborvertex_2.y) < EPS))
-                        {
-                            secondVertexMatched = 22; // neighbor's 2nd vertex is matched to second vertex
-                        }
-                        else if ((Math.Abs(second_x - neighborvertex_3.x) < EPS) &&
-                               (Math.Abs(second_y - neighborvertex_3.y) < EPS))
-                        {
-                            secondVertexMatched = 23; // neighbor's 3rd vertex is matched to second vertex
-                        }/*else{
-                    // none of them matched
-                } // end of second vertex matching*/
-
-                    }
-
-                }// if neighbor exists or not
-
-                if (((firstVertexMatched == 11) && (secondVertexMatched == 22 || secondVertexMatched == 23))
-                 || ((firstVertexMatched == 12) && (secondVertexMatched == 21 || secondVertexMatched == 23))
-                 || ((firstVertexMatched == 13) && (secondVertexMatched == 21 || secondVertexMatched == 22)))
+                if (neighbor.tri.id == Mesh.DUMMY)
+                {
                     break;
-            }// end of for loop over all orientations
+                }
 
-            switch (firstVertexMatched)
-            {
-                case 0:
-                    notFound = true;
+                Vertex n1 = neighbor.Org();
+                Vertex n2 = neighbor.Dest();
+                Vertex n3 = neighbor.Apex();
+
+                if ((n1.x == n2.x && n1.y == n2.y) || (n2.x == n3.x && n2.y == n3.y) || (n1.x == n3.x && n1.y == n3.y))
+                {
+                    // Degenerate neighbor.
                     break;
-                case 11:
-                    if (secondVertexMatched == 22)
-                    {
-                        thirdpoint[0] = neighborvertex_3.x;
-                        thirdpoint[1] = neighborvertex_3.y;
-                    }
-                    else if (secondVertexMatched == 23)
-                    {
-                        thirdpoint[0] = neighborvertex_2.x;
-                        thirdpoint[1] = neighborvertex_2.y;
-                    }
-                    else { notFound = true; }
-                    break;
-                case 12:
-                    if (secondVertexMatched == 21)
-                    {
-                        thirdpoint[0] = neighborvertex_3.x;
-                        thirdpoint[1] = neighborvertex_3.y;
-                    }
-                    else if (secondVertexMatched == 23)
-                    {
-                        thirdpoint[0] = neighborvertex_1.x;
-                        thirdpoint[1] = neighborvertex_1.y;
-                    }
-                    else { notFound = true; }
-                    break;
-                case 13:
-                    if (secondVertexMatched == 21)
-                    {
-                        thirdpoint[0] = neighborvertex_2.x;
-                        thirdpoint[1] = neighborvertex_2.y;
-                    }
-                    else if (secondVertexMatched == 22)
-                    {
-                        thirdpoint[0] = neighborvertex_1.x;
-                        thirdpoint[1] = neighborvertex_1.y;
-                    }
-                    else { notFound = true; }
-                    break;
-                default:
-                    if (secondVertexMatched == 0) { notFound = true; }
-                    break;
+                }
+
+                // The neighbor's origin and destination are the shared edge.
+                thirdpoint[0] = n3.x;
+                thirdpoint[1] = n3.y;
+
+                neighotri = neighbor;
+                return false;
             }
-            // pointer of the neighbor triangle
-            neighotri = neighbor;
-            return notFound;
 
+            badotri.orient = 2;
+            badotri.Sym(ref neighbor);
+
+            neighotri = neighbor;
+            return true;
+        }
+
+        private static bool SameLocation(Vertex v, double x, double y)
+        {
+            return Math.Abs(x - v.x) < EPS && Math.Abs(y - v.y) < EPS;
         }
 
         /// <summary>
@@ -2503,19 +2488,21 @@ namespace TriangleNet
             //double p[5];
 
             // Resize work arrays
-            if (2 * numpoints > petalx.Length)
+            // The work arrays are shared with the other wedge intersection method, which
+            // needs a different size of 'wedges': check both.
+            if (2 * numpoints > petalx.Length || 2 * numpoints * 16 + 36 > wedges.Length)
             {
-                petalx = new double[2 * numpoints];
-                petaly = new double[2 * numpoints];
-                petalr = new double[2 * numpoints];
-                wedges = new double[2 * numpoints * 16 + 36];
+                petalx = new double[Math.Max(2 * numpoints, petalx.Length)];
+                petaly = new double[Math.Max(2 * numpoints, petaly.Length)];
+                petalr = new double[Math.Max(2 * numpoints, petalr.Length)];
+                wedges = new double[Math.Max(2 * numpoints * 16 + 36, wedges.Length)];
             }
 
             double xmid, ymid, dist, x3, y3;
             double x_1, y_1, x_2, y_2, x_3, y_3, x_4, y_4, tempx, tempy;
             double ux, uy;
             double alpha;
-            double[] p1 = new double[3];
+            double[] p1 = workGetWedgeIntersectionWithoutMaxAngle_p1; Array.Clear(p1, 0, 3);
 
             //double poly_points;
             int numpolypoints = 0;
@@ -2535,6 +2522,17 @@ namespace TriangleNet
 
             // minimum angle
             alpha = behavior.MinAngle * Math.PI / 180.0;
+
+            // The same rotations for every edge (computed once, the results are identical).
+            double cosA = Math.Cos(alpha), sinA = Math.Sin(alpha);
+            var cosJ = workGetWedgeIntersectionWithoutMaxAngle_cos;
+            var sinJ = workGetWedgeIntersectionWithoutMaxAngle_sin;
+
+            for (j = 1; j < 4; j++)
+            {
+                cosJ[j] = Math.Cos((Math.PI / 3.0 - alpha) * j);
+                sinJ[j] = Math.Sin((Math.PI / 3.0 - alpha) * j);
+            }
             // initialize the constants
             if (behavior.goodAngle == 1.0)
             {
@@ -2544,7 +2542,7 @@ namespace TriangleNet
             else
             {
                 petalcenterconstant = 0.5 / Math.Tan(alpha);
-                petalradiusconstant = 0.5 / Math.Sin(alpha);
+                petalradiusconstant = 0.5 / sinA;
             }
 
             for (i = 0; i < numpoints * 2; i = i + 2)
@@ -2593,8 +2591,8 @@ namespace TriangleNet
                 ux = x1 - x0;
                 uy = y1 - y0;
                 // rotate the vector around p = (x0,y0) in ccw by alpha degrees
-                x_1 = x1 * Math.Cos(alpha) - y1 * Math.Sin(alpha) + x0 - x0 * Math.Cos(alpha) + y0 * Math.Sin(alpha);
-                y_1 = x1 * Math.Sin(alpha) + y1 * Math.Cos(alpha) + y0 - x0 * Math.Sin(alpha) - y0 * Math.Cos(alpha);
+                x_1 = x1 * cosA - y1 * sinA + x0 - x0 * cosA + y0 * sinA;
+                y_1 = x1 * sinA + y1 * cosA + y0 - x0 * sinA - y0 * cosA;
                 // add these to wedges list as lines in order
                 wedges[i * 16] = x0; wedges[i * 16 + 1] = y0;
                 wedges[i * 16 + 2] = x_1; wedges[i * 16 + 3] = y_1;
@@ -2604,8 +2602,8 @@ namespace TriangleNet
                 ux = x0 - x1;
                 uy = y0 - y1;
                 // rotate the vector around q = (x1,y1) in cw by alpha degrees
-                x_2 = x0 * Math.Cos(alpha) + y0 * Math.Sin(alpha) + x1 - x1 * Math.Cos(alpha) - y1 * Math.Sin(alpha);
-                y_2 = -x0 * Math.Sin(alpha) + y0 * Math.Cos(alpha) + y1 + x1 * Math.Sin(alpha) - y1 * Math.Cos(alpha);
+                x_2 = x0 * cosA + y0 * sinA + x1 - x1 * cosA - y1 * sinA;
+                y_2 = -x0 * sinA + y0 * cosA + y1 + x1 * sinA - y1 * cosA;
                 // add these to wedges list as lines in order
                 wedges[i * 16 + 4] = x_2; wedges[i * 16 + 5] = y_2;
                 wedges[i * 16 + 6] = x1; wedges[i * 16 + 7] = y1;
@@ -2618,8 +2616,8 @@ namespace TriangleNet
                 for (j = 1; j < 4; j++)
                 {
                     // rotate the vector around (petalx,petaly) in cw by (60 - alpha)*j degrees
-                    x_3 = x3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + y3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + petalx[i / 2] - petalx[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j);
-                    y_3 = -x3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + y3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] + petalx[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j);
+                    x_3 = x3 * cosJ[j] + y3 * sinJ[j] + petalx[i / 2] - petalx[i / 2] * cosJ[j] - petaly[i / 2] * sinJ[j];
+                    y_3 = -x3 * sinJ[j] + y3 * cosJ[j] + petaly[i / 2] + petalx[i / 2] * sinJ[j] - petaly[i / 2] * cosJ[j];
                     // add these to wedges list as lines in order
                     wedges[i * 16 + 8 + 4 * (j - 1)] = x_3; wedges[i * 16 + 9 + 4 * (j - 1)] = y_3;
                     wedges[i * 16 + 10 + 4 * (j - 1)] = tempx; wedges[i * 16 + 11 + 4 * (j - 1)] = tempy;
@@ -2630,8 +2628,8 @@ namespace TriangleNet
                 for (j = 1; j < 4; j++)
                 {
                     // rotate the vector around (petalx,petaly) in ccw by (60 - alpha)*j degrees
-                    x_4 = x3 * Math.Cos((Math.PI / 3.0 - alpha) * j) - y3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + petalx[i / 2] - petalx[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j);
-                    y_4 = x3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + y3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] - petalx[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j);
+                    x_4 = x3 * cosJ[j] - y3 * sinJ[j] + petalx[i / 2] - petalx[i / 2] * cosJ[j] + petaly[i / 2] * sinJ[j];
+                    y_4 = x3 * sinJ[j] + y3 * cosJ[j] + petaly[i / 2] - petalx[i / 2] * sinJ[j] - petaly[i / 2] * cosJ[j];
 
                     // add these to wedges list as lines in order
                     wedges[i * 16 + 20 + 4 * (j - 1)] = tempx; wedges[i * 16 + 21 + 4 * (j - 1)] = tempy;
@@ -2765,22 +2763,24 @@ namespace TriangleNet
             //double p[5];
 
             // Resize work arrays
-            if (2 * numpoints > petalx.Length)
+            // The work arrays are shared with the other wedge intersection method, which
+            // needs a different size of 'wedges': check both.
+            if (2 * numpoints > petalx.Length || 2 * numpoints * 20 + 40 > wedges.Length)
             {
-                petalx = new double[2 * numpoints];
-                petaly = new double[2 * numpoints];
-                petalr = new double[2 * numpoints];
-                wedges = new double[2 * numpoints * 20 + 40];
+                petalx = new double[Math.Max(2 * numpoints, petalx.Length)];
+                petaly = new double[Math.Max(2 * numpoints, petaly.Length)];
+                petalr = new double[Math.Max(2 * numpoints, petalr.Length)];
+                wedges = new double[Math.Max(2 * numpoints * 20 + 40, wedges.Length)];
             }
 
             double xmid, ymid, dist, x3, y3;
             double x_1, y_1, x_2, y_2, x_3, y_3, x_4, y_4, tempx, tempy, x_5, y_5, x_6, y_6;
             double ux, uy;
 
-            double[] p1 = new double[3];
-            double[] p2 = new double[3];
-            double[] p3 = new double[3];
-            double[] p4 = new double[3];
+            double[] p1 = workGetWedgeIntersection_p1; Array.Clear(p1, 0, 3);
+            double[] p2 = workGetWedgeIntersection_p2; Array.Clear(p2, 0, 3);
+            double[] p3 = workGetWedgeIntersection_p3; Array.Clear(p3, 0, 3);
+            double[] p4 = workGetWedgeIntersection_p4; Array.Clear(p4, 0, 3);
 
             //double poly_points;
             int numpolypoints = 0;
@@ -3466,7 +3466,7 @@ namespace TriangleNet
             // state = 2: after the second intersection (with the line)
 
             int state = 0;
-            double[] p = new double[3];
+            double[] p = workSplitConvexPolygon_p; Array.Clear(p, 0, 3);
             int poly1counter = 0;
             int poly2counter = 0;
             int numpolys;

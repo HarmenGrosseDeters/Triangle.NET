@@ -51,10 +51,11 @@ namespace TriangleNet
         {
             quality = true;
 
+            // An invalid angle is ignored (other quality options such as the maximum area are
+            // still applied).
             if (minAngle < 0 || minAngle > 60)
             {
                 minAngle = 0;
-                quality = false;
 
                 Log.Instance.Warning("Invalid quality option (minimum angle).", "Mesh.Behavior");
             }
@@ -62,7 +63,6 @@ namespace TriangleNet
             if ((maxAngle != 0.0) && (maxAngle < 60 || maxAngle > 180))
             {
                 maxAngle = 0;
-                quality = false;
 
                 Log.Instance.Warning("Invalid quality option (maximum angle).", "Mesh.Behavior");
             }
@@ -179,6 +179,12 @@ namespace TriangleNet
         /// 1 = no new vertices on the boundary
         /// 2 = prevent all segment splitting, including internal boundaries
         /// </remarks>
+        /// <summary>
+        /// Optional filter deciding whether a subsegment may be split (in addition to
+        /// <see cref="NoBisect"/>). If null, all subsegments may be split.
+        /// </summary>
+        public Func<ISegment, bool> CanSplitSegment { get; set; }
+
         public int NoBisect
         {
             get => noBisect;

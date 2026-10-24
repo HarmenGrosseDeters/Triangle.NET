@@ -98,6 +98,12 @@ namespace TriangleNet.Voronoi.Legacy
 
             foreach (var v in mesh.vertices.Values)
             {
+                // Duplicate input vertices aren't part of the mesh.
+                if (v.type == VertexType.UndeadVertex)
+                {
+                    continue;
+                }
+
                 // TODO: Need a reliable way to check if a vertex is on a segment
                 if (v.type == VertexType.FreeVertex || v.label == 0)
                 {

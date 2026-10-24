@@ -33,21 +33,31 @@ namespace TriangleNet.IO
                 return false;
             }
 
-            string line = reader.ReadLine().Trim();
+            string line = StripComment(reader.ReadLine());
 
-            while (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
+            while (string.IsNullOrWhiteSpace(line))
             {
                 if (reader.EndOfStream)
                 {
                     return false;
                 }
 
-                line = reader.ReadLine().Trim();
+                line = StripComment(reader.ReadLine());
             }
 
             token = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
 
             return true;
+        }
+
+        /// <summary>
+        /// Remove a comment (everything after '#', like Triangle does) and surrounding whitespace.
+        /// </summary>
+        private static string StripComment(string line)
+        {
+            int i = line.IndexOf('#');
+
+            return (i < 0 ? line : line.Substring(0, i)).Trim();
         }
 
         /// <summary>
@@ -68,7 +78,7 @@ namespace TriangleNet.IO
             // Read a vertex marker.
             if (marks > 0 && line.Length > 3 + attributes)
             {
-                v.Label = int.Parse(line[3 + attributes]);
+                v.Label = int.Parse(line[3 + attributes], nfi);
             }
 
             if (attributes > 0)
@@ -176,7 +186,7 @@ namespace TriangleNet.IO
 
                 // Read number of vertices, number of dimensions, number of vertex
                 // attributes, and number of boundary markers.
-                invertices = int.Parse(line[0]);
+                invertices = int.Parse(line[0], nfi);
 
                 if (invertices < 3)
                 {
@@ -185,7 +195,7 @@ namespace TriangleNet.IO
 
                 if (line.Length > 1)
                 {
-                    if (int.Parse(line[1]) != 2)
+                    if (int.Parse(line[1], nfi) != 2)
                     {
                         throw new Exception("Triangle only works with two-dimensional meshes.");
                     }
@@ -193,12 +203,12 @@ namespace TriangleNet.IO
 
                 if (line.Length > 2)
                 {
-                    attributes = int.Parse(line[2]);
+                    attributes = int.Parse(line[2], nfi);
                 }
 
                 if (line.Length > 3)
                 {
-                    nodemarkers = int.Parse(line[3]);
+                    nodemarkers = int.Parse(line[3], nfi);
                 }
 
                 data = new Polygon(invertices);
@@ -287,11 +297,11 @@ namespace TriangleNet.IO
 
                 // Read number of vertices, number of dimensions, number of vertex
                 // attributes, and number of boundary markers.
-                invertices = int.Parse(line[0]);
+                invertices = int.Parse(line[0], nfi);
 
                 if (line.Length > 1)
                 {
-                    if (int.Parse(line[1]) != 2)
+                    if (int.Parse(line[1], nfi) != 2)
                     {
                         throw new Exception("Triangle only works with two-dimensional meshes.");
                     }
@@ -299,12 +309,12 @@ namespace TriangleNet.IO
 
                 if (line.Length > 2)
                 {
-                    attributes = int.Parse(line[2]);
+                    attributes = int.Parse(line[2], nfi);
                 }
 
                 if (line.Length > 3)
                 {
-                    nodemarkers = int.Parse(line[3]);
+                    nodemarkers = int.Parse(line[3], nfi);
                 }
 
                 // Read the vertices.
@@ -357,12 +367,12 @@ namespace TriangleNet.IO
                     throw new Exception("Can't read input file (segments).");
                 }
 
-                int insegments = int.Parse(line[0]);
+                int insegments = int.Parse(line[0], nfi);
 
                 int segmentmarkers = 0;
                 if (line.Length > 1)
                 {
-                    segmentmarkers = int.Parse(line[1]);
+                    segmentmarkers = int.Parse(line[1], nfi);
                 }
 
                 int end1, end2, mark;
@@ -380,13 +390,13 @@ namespace TriangleNet.IO
                     }
 
                     // TODO: startIndex ok?
-                    end1 = int.Parse(line[1]) - startIndex;
-                    end2 = int.Parse(line[2]) - startIndex;
+                    end1 = int.Parse(line[1], nfi) - startIndex;
+                    end2 = int.Parse(line[2], nfi) - startIndex;
                     mark = 0;
 
                     if (segmentmarkers > 0 && line.Length > 3)
                     {
-                        mark = int.Parse(line[3]);
+                        mark = int.Parse(line[3], nfi);
                     }
 
                     if ((end1 < 0) || (end1 >= invertices))
@@ -419,7 +429,7 @@ namespace TriangleNet.IO
                     throw new Exception("Can't read input file (holes).");
                 }
 
-                int holes = int.Parse(line[0]);
+                int holes = int.Parse(line[0], nfi);
                 if (holes > 0)
                 {
                     for (int i = 0; i < holes; i++)
@@ -442,7 +452,7 @@ namespace TriangleNet.IO
                 // Read area constraints (optional).
                 if (TryReadLine(reader, out line))
                 {
-                    int id, regions = int.Parse(line[0]);
+                    int id, regions = int.Parse(line[0], nfi);
 
                     if (regions > 0)
                     {
@@ -458,7 +468,7 @@ namespace TriangleNet.IO
                                 throw new Exception("Invalid region attributes.");
                             }
 
-                            if (!int.TryParse(line[3], out id))
+                            if (!int.TryParse(line[3], NumberStyles.Integer, nfi, out id))
                             {
                                 id = i;
                             }
@@ -467,7 +477,7 @@ namespace TriangleNet.IO
 
                             if (line.Length > 4)
                             {
-                                double.TryParse(line[4], NumberStyles.Number, nfi, out area);
+                                double.TryParse(line[4], NumberStyles.Float, nfi, out area);
                             }
 
                             // Triangle's .poly file format allows region definitions with
@@ -534,13 +544,15 @@ namespace TriangleNet.IO
                     throw new Exception("Can't read input file (elements).");
                 }
 
-                intriangles = int.Parse(line[0]);
+                intriangles = int.Parse(line[0], nfi);
 
-                // We ignore index 1 (number of nodes per triangle)
+                // Number of nodes per triangle (3 or 6, only the corners are used).
+                int nodesPerTriangle = line.Length > 1 ? int.Parse(line[1], nfi) : 3;
+
                 attributes = 0;
                 if (line.Length > 2)
                 {
-                    attributes = int.Parse(line[2]);
+                    attributes = int.Parse(line[2], nfi);
                     validRegion = true;
                 }
 
@@ -569,15 +581,16 @@ namespace TriangleNet.IO
 
                     // TODO: startIndex ok?
                     tri = new InputTriangle(
-                        int.Parse(line[1]) - startIndex,
-                        int.Parse(line[2]) - startIndex,
-                        int.Parse(line[3]) - startIndex);
+                        int.Parse(line[1], nfi) - startIndex,
+                        int.Parse(line[2], nfi) - startIndex,
+                        int.Parse(line[3], nfi) - startIndex);
 
                     // Read triangle region
                     if (attributes > 0 && validRegion)
                     {
                         int region = 0;
-                        validRegion = int.TryParse(line[4], out region);
+                        validRegion = line.Length > 1 + nodesPerTriangle &&
+                            int.TryParse(line[1 + nodesPerTriangle], NumberStyles.Integer, nfi, out region);
                         tri.label = region;
                     }
 
@@ -616,7 +629,7 @@ namespace TriangleNet.IO
                     throw new Exception("Can't read input file (area).");
                 }
 
-                if (int.Parse(line[0]) != intriangles)
+                if (int.Parse(line[0], nfi) != intriangles)
                 {
                     Log.Instance.Warning("Number of area constraints doesn't match number of triangles.",
                         "TriangleReader.ReadAreaFile()");
@@ -670,12 +683,12 @@ namespace TriangleNet.IO
                     throw new Exception("Can't read input file (segments).");
                 }
 
-                int inedges = int.Parse(line[0]);
+                int inedges = int.Parse(line[0], nfi);
 
                 int edgemarkers = 0;
                 if (line.Length > 1)
                 {
-                    edgemarkers = int.Parse(line[1]);
+                    edgemarkers = int.Parse(line[1], nfi);
                 }
 
                 if (inedges > 0)
@@ -698,13 +711,13 @@ namespace TriangleNet.IO
                     }
 
                     // TODO: startIndex ok?
-                    end1 = int.Parse(line[1]) - startIndex;
-                    end2 = int.Parse(line[2]) - startIndex;
+                    end1 = int.Parse(line[1], nfi) - startIndex;
+                    end2 = int.Parse(line[2], nfi) - startIndex;
                     mark = 0;
 
                     if (edgemarkers > 0 && line.Length > 3)
                     {
-                        mark = int.Parse(line[3]);
+                        mark = int.Parse(line[3], nfi);
                     }
 
                     if ((end1 < 0) || (end1 >= invertices))

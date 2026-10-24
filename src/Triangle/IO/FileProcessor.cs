@@ -8,6 +8,7 @@ namespace TriangleNet.IO
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using TriangleNet.Geometry;
     using TriangleNet.Meshing;
 
@@ -51,7 +52,7 @@ namespace TriangleNet.IO
         /// <returns>An instance of the <see cref="IPolygon" /> class.</returns>
         public static IPolygon Read(string filename)
         {
-            foreach (IPolygonFormat format in formats)
+            foreach (var format in formats.OfType<IPolygonFormat>())
             {
                 if (format != null && format.IsSupported(filename))
                 {
@@ -69,7 +70,7 @@ namespace TriangleNet.IO
         /// <param name="filename">The path of the file to save.</param>
         public static void Write(IPolygon polygon, string filename)
         {
-            foreach (IPolygonFormat format in formats)
+            foreach (var format in formats.OfType<IPolygonFormat>())
             {
                 if (format != null && format.IsSupported(filename))
                 {
@@ -92,7 +93,7 @@ namespace TriangleNet.IO
         /// <returns>An instance of the <see cref="IMesh" /> interface.</returns>
         public static IMesh Import(string filename)
         {
-            foreach (IMeshFormat format in formats)
+            foreach (var format in formats.OfType<IMeshFormat>())
             {
                 if (format != null && format.IsSupported(filename))
                 {
@@ -110,7 +111,7 @@ namespace TriangleNet.IO
         /// <param name="filename">The path of the file to save.</param>
         public static void Write(IMesh mesh, string filename)
         {
-            foreach (IMeshFormat format in formats)
+            foreach (var format in formats.OfType<IMeshFormat>())
             {
                 if (format != null && format.IsSupported(filename))
                 {

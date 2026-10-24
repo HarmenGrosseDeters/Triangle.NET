@@ -28,6 +28,9 @@ namespace TriangleNet.Meshing
 
         NewLocation newLocation;
 
+        // Subsegments which can't be split due to the limited precision of floating point arithmetic.
+        HashSet<SubSegment> unsplittable = new HashSet<SubSegment>();
+
         Log logger = Log.Instance;
 
         // Stores the vertices of the triangle that contains newvertex
@@ -76,14 +79,6 @@ namespace TriangleNet.Meshing
                 mesh.steinerleft = quality.SteinerPoints == 0 ? -1 : quality.SteinerPoints;
 
                 enableAcute = !quality.UseLegacyRefinement;
-            }
-
-            // TODO: remove
-            if (!behavior.Poly)
-            {
-                // Be careful not to allocate space for element area constraints that
-                // will never be assigned any value (other than the default -1.0).
-                behavior.VarArea = false;
             }
 
             // Ensure that no vertex can be mistaken for a triangular bounding
@@ -137,6 +132,16 @@ namespace TriangleNet.Meshing
         /// </remarks>
         public int CheckSeg4Encroach(ref Osub testsubseg)
         {
+            return CheckSeg4Encroach(ref testsubseg, null);
+        }
+
+        /// <summary>
+        /// Check a subsegment for encroachment (see above). If <paramref name="apex1"/> is not
+        /// null, it is used as the apex of the triangle on the subsegment's side (the vertex
+        /// that would be inserted there).
+        /// </summary>
+        private int CheckSeg4Encroach(ref Osub testsubseg, Vertex apex1, bool enqueue = true)
+        {
             Otri neighbortri = default(Otri);
             Osub testsym = default(Osub);
             BadSubseg encroachedseg;
@@ -157,7 +162,7 @@ namespace TriangleNet.Meshing
             {
                 sides++;
                 // Find a vertex opposite this subsegment.
-                eapex = neighbortri.Apex();
+                eapex = apex1 ?? neighbortri.Apex();
                 // Check whether the apex is in the diametral lens of the subsegment
                 // (the diametral circle if 'conformdel' is set).  A dot product
                 // of two sides of the triangle is used to check whether the angle
@@ -207,7 +212,8 @@ namespace TriangleNet.Meshing
                 }
             }
 
-            if (encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))))
+            if (enqueue && encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))) &&
+                CanSplit(testsubseg.seg))
             {
                 // Add the subsegment to the list of encroached subsegments.
                 // Be sure to get the orientation right.
@@ -367,6 +373,14 @@ namespace TriangleNet.Meshing
             }
 
             // Check whether the angle is smaller than permitted.
+            if (gridSize > 0.0 && minedge < 4.0 * gridSize * gridSize)
+            {
+                // Triangles with edges shorter than two grid cells can't be improved by
+                // Steiner points on the grid (rounding them changes the angles too much, and
+                // refinement would cascade down to the grid all around small input angles).
+                return;
+            }
+
             if ((angle > behavior.goodAngle) || (maxangle < behavior.maxGoodAngle && behavior.MaxAngle != 0.0))
             {
                 // Use the rules of Miller, Pav, and Walkington to decide that certain
@@ -424,8 +438,10 @@ namespace TriangleNet.Meshing
                             dist2 = ((base2.x - joinvertex.x) * (base2.x - joinvertex.x) +
                                      (base2.y - joinvertex.y) * (base2.y - joinvertex.y));
                             // If the two distances are equal, don't split the triangle.
-                            if ((dist1 < 1.001 * dist2) && (dist1 > 0.999 * dist2))
+                            if (((dist1 < 1.001 * dist2) && (dist1 > 0.999 * dist2)) ||
+                                (gridSize > 0.0 && Math.Abs(Math.Sqrt(dist1) - Math.Sqrt(dist2)) <= 2.0 * gridSize))
                             {
+                                // With a grid, the vertices on the shells are rounded.
                                 // Return now to avoid enqueueing the bad triangle.
                                 return;
                             }
@@ -656,17 +672,33 @@ namespace TriangleNet.Meshing
                         }
                     }
 
-                    // Check whether the new vertex lies on an endpoint.
-                    if (((newvertex.x == eorg.x) && (newvertex.y == eorg.y)) ||
-                        ((newvertex.x == edest.x) && (newvertex.y == edest.y)))
+                    if (GridSize > 0.0 && !MoveToGrid(ref enctri, newvertex, eorg, edest,
+                        currentenc.SegOrg(), currentenc.SegDest()))
                     {
+                        // No grid point is a valid split: the subsegment can't be split.
+                        mesh.vertices.Remove(newvertex.hash);
+                        unsplittable.Add(currentenc.seg);
+                        seg.org = null;
+                        continue;
+                    }
 
-                        logger.Error("Ran out of precision: I attempted to split a"
-                            + " segment to a smaller size than can be accommodated by"
-                            + " the finite precision of floating point arithmetic.",
-                            "Quality.SplitEncSegs()");
+                    // Check whether the new vertex lies on an endpoint, or whether inserting it
+                    // would create flat or inverted triangles. In both cases, the segment is too
+                    // small to be split with the finite precision of floating point arithmetic.
+                    if (((newvertex.x == eorg.x) && (newvertex.y == eorg.y)) ||
+                        ((newvertex.x == edest.x) && (newvertex.y == edest.y)) ||
+                        !IsValidSplit(ref enctri, newvertex))
+                    {
+                        if (Log.Verbose)
+                        {
+                            logger.Warning("Ran out of precision: segment can't be split.", "Quality.SplitEncSegs()");
+                        }
 
-                        throw new Exception("Ran out of precision");
+                        // Don't split this subsegment (quality may be compromised near it).
+                        mesh.vertices.Remove(newvertex.hash);
+                        unsplittable.Add(currentenc.seg);
+                        seg.org = null;
+                        continue;
                     }
                     // Insert the splitting vertex.  This should always succeed.
                     success = mesh.InsertVertex(newvertex, ref enctri, ref currentenc, true, triflaws);
@@ -720,7 +752,7 @@ namespace TriangleNet.Meshing
             Point newloc; // Location of the new vertex
             double xi = 0, eta = 0;
             InsertVertexResult success;
-            bool errorflag;
+            bool errorflag = false;
 
             badotri = badtri.poortri;
             borg = badotri.Org();
@@ -733,109 +765,628 @@ namespace TriangleNet.Meshing
             if (!Otri.IsDead(badotri.tri) && (borg == badtri.org) &&
                 (bdest == badtri.dest) && (bapex == badtri.apex))
             {
-                errorflag = false;
-                // Create a new vertex at the triangle's circumcenter.
-                if (enableAcute)
-                {
-                    newloc = newLocation.FindLocation(borg, bdest, bapex, ref xi, ref eta, true, badotri);
-                }
-                else
-                {
-                    newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
-                }
+                // If the aCute location coincides with an existing vertex, or if it doesn't
+                // destroy the bad triangle (the aCute location may lie outside the
+                // circumcircle, so e.g. a too large triangle would remain and never be
+                // tested again), fall back to the circumcenter (classic Delaunay refinement).
+                bool survived = false;
+                bool relocated = false;
 
-                // Check whether the new vertex lies on a triangle vertex.
-                if (((newloc.x == borg.x) && (newloc.y == borg.y)) ||
-                    ((newloc.x == bdest.x) && (newloc.y == bdest.y)) ||
-                    ((newloc.x == bapex.x) && (newloc.y == bapex.y)))
+                int queuedAtStart = badsubsegs.Count;
+                InsertVertexResult lastResult = InsertVertexResult.Successful;
+                refusedAtPrecisionLimit = false;
+
+                for (int attempt = 0; attempt < 2; attempt++)
                 {
-                    if (Log.Verbose)
+                    bool useAcute = enableAcute && attempt == 0;
+
+                    if (attempt > 0)
                     {
-                        logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
-                    }
-                    errorflag = true;
-                }
-                else
-                {
-                    // The new vertex must be in the interior, and therefore is a
-                    // free vertex with a marker of zero.
-                    Vertex newvertex = new Vertex(newloc.x, newloc.y, 0
-#if USE_ATTRIBS
-                        , mesh.nextras
-#endif
-                        );
-
-                    newvertex.type = VertexType.FreeVertex;
-
-                    // Ensure that the handle 'badotri' does not represent the longest
-                    // edge of the triangle.  This ensures that the circumcenter must
-                    // fall to the left of this edge, so point location will work.
-                    // (If the angle org-apex-dest exceeds 90 degrees, then the
-                    // circumcenter lies outside the org-dest edge, and eta is
-                    // negative.  Roundoff error might prevent eta from being
-                    // negative when it should be, so I test eta against xi.)
-                    if (eta < xi)
-                    {
-                        badotri.Lprev();
-                    }
-
-                    // Assign triangle for attributes interpolation.
-                    newvertex.tri.tri = newvertex_tri;
-
-                    // Insert the circumcenter, searching from the edge of the triangle,
-                    // and maintain the Delaunay property of the triangulation.
-                    Osub tmp = default(Osub);
-                    success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
-
-                    if (success == InsertVertexResult.Successful)
-                    {
-                        newvertex.hash = mesh.hash_vtx++;
-                        newvertex.id = newvertex.hash;
-#if USE_ATTRIBS
-                        if (mesh.nextras > 0)
+                        // After a relocation the bad triangle doesn't exist anymore.
+                        if (!(errorflag || survived) || !enableAcute || relocated)
                         {
-                            Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
+                            break;
                         }
-#endif
-#if USE_Z
-                        Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
-#endif
-                        mesh.vertices.Add(newvertex.hash, newvertex);
 
-                        if (mesh.steinerleft > 0)
+                        // A failed insertion might have moved the handle.
+                        badotri = badtri.poortri;
+                    }
+
+                    errorflag = false;
+                    // Create a new vertex at the triangle's circumcenter.
+                    newloc = null;
+
+                    if (useAcute)
+                    {
+                        newloc = newLocation.FindLocation(borg, bdest, bapex, ref xi, ref eta, true, badotri);
+                        relocated = newLocation.Relocated;
+
+                        // A relocation already deleted a vertex, so the location must be used.
+                        if (!relocated && !IsAcuteLocationValid(borg, bdest, bapex, newloc))
                         {
-                            mesh.steinerleft--;
+                            useAcute = false;
+                            newloc = null;
                         }
                     }
-                    else if (success == InsertVertexResult.Encroaching)
+
+                    if (newloc == null)
                     {
-                        // If the newly inserted vertex encroaches upon a subsegment,
-                        // delete the new vertex.
-                        mesh.UndoVertex();
+                        newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
                     }
-                    else if (success == InsertVertexResult.Violating)
+
+                    if (GridSize > 0.0)
                     {
-                        // Failed to insert the new vertex, but some subsegment was
-                        // marked as being encroached.
+                        // Steiner points on the output grid. If the triangle is smaller than
+                        // the grid, the rounded location may coincide with one of its vertices
+                        // (the triangle can't be refined then, see below).
+                        newloc = new Point(GridSnapper.Round(newloc.x, GridSize), GridSnapper.Round(newloc.y, GridSize));
                     }
-                    else
-                    {   // success == DUPLICATEVERTEX
-                        // Couldn't insert the new vertex because a vertex is already there.
+
+                    // Check whether the new vertex lies on a triangle vertex.
+                    if (((newloc.x == borg.x) && (newloc.y == borg.y)) ||
+                        ((newloc.x == bdest.x) && (newloc.y == bdest.y)) ||
+                        ((newloc.x == bapex.x) && (newloc.y == bapex.y)))
+                    {
                         if (Log.Verbose)
                         {
                             logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
                         }
                         errorflag = true;
                     }
+                    else
+                    {
+                        // The new vertex must be in the interior, and therefore is a
+                        // free vertex with a marker of zero.
+                        Vertex newvertex = new Vertex(newloc.x, newloc.y, 0
+    #if USE_ATTRIBS
+                            , mesh.nextras
+    #endif
+                            );
+
+                        newvertex.type = VertexType.FreeVertex;
+
+                        // Ensure that the handle 'badotri' does not represent the longest
+                        // edge of the triangle.  This ensures that the circumcenter must
+                        // fall to the left of this edge, so point location will work.
+                        // (If the angle org-apex-dest exceeds 90 degrees, then the
+                        // circumcenter lies outside the org-dest edge, and eta is
+                        // negative.  Roundoff error might prevent eta from being
+                        // negative when it should be, so I test eta against xi.)
+                        if (useAcute || GridSize > 0.0)
+                        {
+                            // The aCute location (or the rounded location) isn't necessarily the circumcenter and might
+                            // lie outside the triangle, so xi and eta can't be used. Point
+                            // location requires the new vertex to lie to the left of the edge.
+                            for (int i = 0; i < 2 && predicates.CounterClockwise(badotri.Org(), badotri.Dest(), newloc) <= 0.0; i++)
+                            {
+                                badotri.Lnext();
+                            }
+                        }
+                        else if (eta < xi)
+                        {
+                            badotri.Lprev();
+                        }
+
+                        // Assign triangle for attributes interpolation.
+                        newvertex.tri.tri = newvertex_tri;
+
+                        // Insert the circumcenter, searching from the edge of the triangle,
+                        // and maintain the Delaunay property of the triangulation.
+                        Osub tmp = default(Osub);
+
+                        // Check for encroached subsegments before modifying the mesh (inserting
+                        // and undoing a vertex with a large cavity is expensive).
+                        int queued = badsubsegs.Count;
+                        bool encroaches = EncroachesBeforeInsertion(newvertex, badotri);
+
+                        if (encroaches && badsubsegs.Count == queued && (!refusedAtPrecisionLimit || gridSize > 0.0))
+                        {
+                            // Only subsegments which must not be split are encroached (segment
+                            // splitting disabled, locked segments, or with a grid subsegments
+                            // where no grid point is a valid split). Rejecting the vertex would
+                            // drop the bad triangle for good, so it is inserted anyway: it lies
+                            // inside the domain, only the subsegment can't be split. (At the
+                            // precision limit without a grid, this would refine forever.)
+                            encroaches = false;
+                            success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, false, true);
+                        }
+                        else
+                        {
+                            success = encroaches ? InsertVertexResult.Encroaching
+                                : mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
+                        }
+
+                        lastResult = success;
+
+                        if (success == InsertVertexResult.Successful)
+                        {
+                            AddInsertedVertex(newvertex);
+
+                            if (relocated)
+                            {
+                                newLocation.MarkRelocated(newvertex);
+                            }
+
+                            survived = useAcute && !relocated && mesh.steinerleft != 0 && IsAlive(badtri);
+                        }
+                        else if (success == InsertVertexResult.Encroaching)
+                        {
+                            // If the newly inserted vertex encroaches upon a subsegment,
+                            // delete the new vertex.
+                            if (!encroaches)
+                            {
+                                mesh.UndoVertex();
+                            }
+                        }
+                        else if (success == InsertVertexResult.Violating)
+                        {
+                            // Failed to insert the new vertex, but some subsegment was
+                            // marked as being encroached.
+                        }
+                        else
+                        {   // success == DUPLICATEVERTEX
+                            // Couldn't insert the new vertex because a vertex is already there.
+                            if (Log.Verbose)
+                            {
+                                logger.Warning("New vertex falls on existing vertex.", "Quality.SplitTriangle()");
+                            }
+                            errorflag = true;
+                        }
+                    }
                 }
+
+                if (!errorflag && !relocated && lastResult == InsertVertexResult.Violating && !refusedAtPrecisionLimit &&
+                    badsubsegs.Count == queuedAtStart && IsAlive(badtri) && IsTooLarge(badtri.poortri))
+                {
+                    // The new vertex lies beyond a subsegment which must not be split (segment
+                    // splitting disabled, locked segments), so the triangle would be dropped. If
+                    // it is too large, split it at its centroid instead (the area constraint is
+                    // met eventually; bad angles at such subsegments can't be fixed anyway).
+                    InsertCentroid(badtri.poortri);
+                }
+
                 if (errorflag)
                 {
-                    logger.Error("The new vertex is at the circumcenter of triangle: This probably "
-                        + "means that I am trying to refine triangles to a smaller size than can be "
-                        + "accommodated by the finite precision of floating point arithmetic.",
-                        "Quality.SplitTriangle()");
+                    // The triangle is too small to be refined with the finite precision of
+                    // floating point arithmetic. Leave it as it is (it remains a bad triangle).
+                    if (Log.Verbose)
+                    {
+                        logger.Warning("The new vertex is at the circumcenter of triangle: triangle can't be refined.",
+                            "Quality.SplitTriangle()");
+                    }
+                }
+            }
+        }
 
-                    throw new Exception("The new vertex is at the circumcenter of triangle.");
+        /// <summary>
+        /// Register a vertex which has been inserted successfully.
+        /// </summary>
+        private void AddInsertedVertex(Vertex newvertex)
+        {
+            newvertex.hash = mesh.hash_vtx++;
+            newvertex.id = newvertex.hash;
+#if USE_ATTRIBS
+            if (mesh.nextras > 0)
+            {
+                Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
+            }
+#endif
+#if USE_Z
+            Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
+#endif
+            mesh.vertices.Add(newvertex.hash, newvertex);
+
+            if (mesh.steinerleft > 0)
+            {
+                mesh.steinerleft--;
+            }
+        }
+
+        /// <summary>
+        /// Returns true, if the triangle violates the area constraint.
+        /// </summary>
+        private bool IsTooLarge(Otri tri)
+        {
+            Vertex org = tri.Org(), dest = tri.Dest(), apex = tri.Apex();
+
+            double area = 0.5 * ((dest.x - org.x) * (apex.y - org.y) - (apex.x - org.x) * (dest.y - org.y));
+
+            return (behavior.fixedArea && area > behavior.MaxArea) ||
+                (behavior.VarArea && tri.tri.area > 0.0 && area > tri.tri.area);
+        }
+
+        /// <summary>
+        /// Insert a vertex at the centroid of the triangle.
+        /// </summary>
+        private void InsertCentroid(Otri tri)
+        {
+            Vertex org = tri.Org(), dest = tri.Dest(), apex = tri.Apex();
+
+            var v = new Vertex((org.x + dest.x + apex.x) / 3.0, (org.y + dest.y + apex.y) / 3.0, 0
+#if USE_ATTRIBS
+                , mesh.nextras
+#endif
+                );
+
+            v.type = VertexType.FreeVertex;
+            v.tri.tri = newvertex_tri;
+
+            // The rounded centroid must lie inside the triangle.
+            if (predicates.CounterClockwise(org, dest, v) <= 0.0 ||
+                predicates.CounterClockwise(dest, apex, v) <= 0.0 ||
+                predicates.CounterClockwise(apex, org, v) <= 0.0)
+            {
+                return;
+            }
+
+            Osub tmp = default(Osub);
+            InsertVertexResult success;
+
+            int queued = badsubsegs.Count;
+
+            refusedAtPrecisionLimit = false;
+
+            if (EncroachesBeforeInsertion(v, tri))
+            {
+                if (badsubsegs.Count > queued || refusedAtPrecisionLimit)
+                {
+                    // Encroached subsegments which can be split are split first (the triangle is
+                    // put back in the queue).
+                    return;
+                }
+
+                success = mesh.InsertVertex(v, ref tri, ref tmp, false, true);
+            }
+            else
+            {
+                success = mesh.InsertVertex(v, ref tri, ref tmp, true, true);
+
+                if (success == InsertVertexResult.Encroaching)
+                {
+                    mesh.UndoVertex();
+                    return;
+                }
+            }
+
+            if (success == InsertVertexResult.Successful)
+            {
+                AddInsertedVertex(v);
+            }
+        }
+
+        // Work data of EncroachesBeforeInsertion.
+        private readonly HashSet<Triangle> cavity = new HashSet<Triangle>();
+        private readonly Stack<Otri> cavityStack = new Stack<Otri>();
+        private readonly Dictionary<Vertex, Otri> cavityBoundary = new Dictionary<Vertex, Otri>();
+        private readonly List<Osub> cavitySubsegs = new List<Osub>();
+        private readonly List<Osub> cavityEncroached = new List<Osub>();
+
+        // Cavity size (number of triangles) from which the search stops at the first encroached
+        // subsegments.
+        private const int LargeCavity = 64;
+
+        /// <summary>
+        /// Determine, without modifying the mesh, whether inserting the vertex would encroach
+        /// upon a subsegment. If so, the encroached subsegments are queued exactly as
+        /// <see cref="Mesh.InsertVertex"/> would do it, and true is returned (the vertex must not
+        /// be inserted).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Mesh.InsertVertex"/> inserts the vertex, flips edges and checks each
+        /// subsegment on the boundary of the resulting cavity (counterclockwise around the vertex,
+        /// starting at the origin of the located triangle). For a large cavity (needle-shaped
+        /// regions), inserting and undoing the vertex is quadratic in practice. Here, the cavity
+        /// is found with the same incircle tests, and its boundary subsegments are checked in the
+        /// same order. If the situation isn't a plain one (vertex not inside a triangle, cavity
+        /// on both sides of a subsegment, non-simple boundary), false is returned and the regular
+        /// insertion decides.
+        ///
+        /// For large cavities, the search stops as soon as encroached subsegments have been found
+        /// (they are queued in the order found). Inserting the vertex is futile anyway, and the
+        /// remaining encroached subsegments are found when the triangle is tried again.
+        /// </remarks>
+        private bool EncroachesBeforeInsertion(Vertex v, Otri searchtri)
+        {
+            if (!mesh.checksegments)
+            {
+                return false;
+            }
+
+            Otri horiz = default(Otri);
+            searchtri.Copy(ref horiz);
+
+            if (mesh.locator.PreciseLocate(v, ref horiz, true) != LocateResult.InTriangle)
+            {
+                return false;
+            }
+
+            cavity.Clear();
+            cavityStack.Clear();
+            cavityBoundary.Clear();
+            cavitySubsegs.Clear();
+            cavityEncroached.Clear();
+
+            Otri tri = default(Otri), neighbor = default(Otri);
+            Osub sub = default(Osub);
+
+            cavity.Add(horiz.tri);
+            cavityStack.Push(horiz);
+
+            while (cavityStack.Count > 0)
+            {
+                tri = cavityStack.Pop();
+
+                for (tri.orient = 0; tri.orient < 3; tri.orient++)
+                {
+                    tri.Pivot(ref sub);
+
+                    if (sub.seg.hash == Mesh.DUMMY)
+                    {
+                        tri.Sym(ref neighbor);
+
+                        if (neighbor.tri.id != Mesh.DUMMY)
+                        {
+                            if (cavity.Contains(neighbor.tri))
+                            {
+                                continue;
+                            }
+
+                            // Same test (and argument order) as in Mesh.InsertVertex.
+                            if (predicates.InCircle(tri.Dest(), v, tri.Org(), neighbor.Apex()) > 0.0)
+                            {
+                                cavity.Add(neighbor.tri);
+                                cavityStack.Push(neighbor);
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Boundary edge of the cavity (the cavity is on its left side).
+                    var org = tri.Org();
+
+                    if (cavityBoundary.ContainsKey(org))
+                    {
+                        return false;
+                    }
+
+                    cavityBoundary.Add(org, tri);
+
+                    if (sub.seg.hash != Mesh.DUMMY && CheckSeg4Encroach(ref sub, v, false) > 0)
+                    {
+                        cavityEncroached.Add(sub);
+                    }
+                }
+
+                if (cavity.Count > LargeCavity && cavityEncroached.Count > 0)
+                {
+                    for (int i = 0; i < cavityEncroached.Count; i++)
+                    {
+                        sub = cavityEncroached[i];
+                        CheckSeg4Encroach(ref sub, v);
+                    }
+
+                    return true;
+                }
+            }
+
+            // Walk along the boundary (counterclockwise around v) and collect the subsegments.
+            var start = horiz.Org();
+            var u = start;
+            int count = 0;
+
+            do
+            {
+                if (!cavityBoundary.TryGetValue(u, out tri))
+                {
+                    return false;
+                }
+
+                tri.Pivot(ref sub);
+
+                if (sub.seg.hash != Mesh.DUMMY)
+                {
+                    // The triangle on the other side must not be part of the cavity.
+                    Osub sym = default(Osub);
+                    sub.Sym(ref sym);
+                    sym.Pivot(ref neighbor);
+
+                    if (neighbor.tri.id != Mesh.DUMMY && cavity.Contains(neighbor.tri))
+                    {
+                        return false;
+                    }
+
+                    cavitySubsegs.Add(sub);
+                }
+
+                u = tri.Dest();
+                count++;
+            }
+            while (u != start && count <= cavityBoundary.Count);
+
+            if (u != start || count != cavityBoundary.Count)
+            {
+                return false;
+            }
+
+            bool encroached = false;
+
+            for (int i = 0; i < cavitySubsegs.Count; i++)
+            {
+                sub = cavitySubsegs[i];
+
+                if (CheckSeg4Encroach(ref sub, v) > 0)
+                {
+                    encroached = true;
+                }
+            }
+
+            return encroached;
+        }
+
+        /// <summary>
+        /// Returns true, if the aCute location can be used to refine the triangle: it must lie
+        /// strictly inside the circumcircle (otherwise inserting it doesn't destroy the triangle)
+        /// and not (almost) on one of the triangle's vertices (otherwise it creates degenerate
+        /// triangles, which are refined again and again).
+        /// </summary>
+        private bool IsAcuteLocationValid(Vertex org, Vertex dest, Vertex apex, Point p)
+        {
+            if (p == null || double.IsNaN(p.x) || double.IsNaN(p.y) ||
+                predicates.InCircle(org, dest, apex, p) <= 0.0)
+            {
+                return false;
+            }
+
+            double shortest = Math.Min(Distance2(org, dest), Math.Min(Distance2(dest, apex), Distance2(apex, org)));
+            double tolerance = 1e-4 * shortest;
+
+            return Distance2(p, org) > tolerance && Distance2(p, dest) > tolerance && Distance2(p, apex) > tolerance;
+        }
+
+        private static double Distance2(Point a, Point b)
+        {
+            double dx = a.x - b.x, dy = a.y - b.y;
+            return dx * dx + dy * dy;
+        }
+
+        /// <summary>
+        /// Returns true, if the triangle still exists (unchanged).
+        /// </summary>
+        private static bool IsAlive(BadTriangle badtri)
+        {
+            var tri = badtri.poortri;
+
+            return !Otri.IsDead(tri.tri) && tri.Org() == badtri.org &&
+                tri.Dest() == badtri.dest && tri.Apex() == badtri.apex;
+        }
+
+        /// <summary>
+        /// Returns true, if the given subsegment may be split.
+        /// </summary>
+        internal bool CanSplit(SubSegment seg)
+        {
+            if (unsplittable.Contains(seg))
+            {
+                refusedAtPrecisionLimit = true;
+                return false;
+            }
+
+            return behavior.CanSplitSegment == null || behavior.CanSplitSegment(seg);
+        }
+
+        /// <summary>
+        /// Size of the grid Steiner points are rounded to (0 = no rounding).
+        /// </summary>
+        internal double GridSize
+        {
+            get { return gridSize; }
+            set { gridSize = value; newLocation.GridSize = value; }
+        }
+
+        private double gridSize;
+
+
+        // Set if CanSplit refused a subsegment because of the precision limit (reset by
+        // SplitTriangle). Only subsegments which must not be split by the user's choice justify
+        // inserting a vertex that encroaches upon them.
+        private bool refusedAtPrecisionLimit;
+
+        /// <summary>
+        /// Move a split vertex to the grid (the subsegments bend slightly).
+        /// </summary>
+        /// <param name="tri">The triangle of the subsegment (for <see cref="IsValidSplit"/>).</param>
+        /// <param name="v">The split vertex.</param>
+        /// <param name="org">The origin of the subsegment.</param>
+        /// <param name="dest">The destination of the subsegment.</param>
+        /// <param name="segorg">The origin of the input segment.</param>
+        /// <param name="segdest">The destination of the input segment.</param>
+        /// <returns>False, if the rounded location isn't a valid split (the subsegment is
+        /// too short, or next to very thin triangles).</returns>
+        /// <remarks>
+        /// The subsegment's endpoints are already rounded, so the vertex is projected onto
+        /// the input segment before rounding. Otherwise the deviation from the input segment
+        /// would add up with each level of splitting.
+        /// </remarks>
+        private bool MoveToGrid(ref Otri tri, Vertex v, Vertex org, Vertex dest, Vertex segorg, Vertex segdest)
+        {
+            double x = v.x, y = v.y;
+            double px = x, py = y;
+
+            double dx = segdest.x - segorg.x, dy = segdest.y - segorg.y;
+            double l2 = dx * dx + dy * dy;
+
+            if (l2 > 0.0)
+            {
+                double t = ((x - segorg.x) * dx + (y - segorg.y) * dy) / l2;
+
+                px = segorg.x + t * dx;
+                py = segorg.y + t * dy;
+            }
+
+            v.x = GridSnapper.Round(px, gridSize);
+            v.y = GridSnapper.Round(py, gridSize);
+
+            if ((v.x != org.x || v.y != org.y) && (v.x != dest.x || v.y != dest.y) && IsValidSplit(ref tri, v))
+            {
+                return true;
+            }
+
+            v.x = x;
+            v.y = y;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Check whether inserting the vertex on the edge of the given triangle creates
+        /// only positively oriented triangles (using exact predicates).
+        /// </summary>
+        private bool IsValidSplit(ref Otri tri, Vertex v)
+        {
+            Otri sym = default(Otri);
+
+            var org = tri.Org();
+            var dest = tri.Dest();
+            var apex = tri.Apex();
+
+            if (predicates.CounterClockwise(org, v, apex) <= 0.0 ||
+                predicates.CounterClockwise(v, dest, apex) <= 0.0)
+            {
+                return false;
+            }
+
+            tri.Sym(ref sym);
+
+            if (sym.tri.id != Mesh.DUMMY)
+            {
+                apex = sym.Apex();
+
+                if (predicates.CounterClockwise(dest, v, apex) <= 0.0 ||
+                    predicates.CounterClockwise(v, org, apex) <= 0.0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Throw if refinement produced flat or inverted triangles.
+        /// </summary>
+        private void CheckOrientation()
+        {
+            Otri tri = default(Otri);
+
+            foreach (var t in mesh.triangles)
+            {
+                tri.tri = t;
+                tri.orient = 0;
+
+                if (predicates.CounterClockwise(tri.Org(), tri.Dest(), tri.Apex()) <= 0.0)
+                {
+                    logger.Error("Inverted triangle after mesh refinement.", "QualityMesher.CheckOrientation()");
+                    throw new Exception("Mesh refinement produced an invalid mesh.");
                 }
             }
         }
@@ -856,7 +1407,7 @@ namespace TriangleNet.Meshing
             // triangulation should be (conforming) Delaunay.
 
             // Next, we worry about enforcing triangle quality.
-            if ((behavior.MinAngle > 0.0) || behavior.VarArea || behavior.fixedArea || behavior.UserTest != null)
+            if ((behavior.MinAngle > 0.0) || (behavior.MaxAngle > 0.0) || behavior.VarArea || behavior.fixedArea || behavior.UserTest != null)
             {
                 // TODO: Reset queue? (Or is it always empty at this point)
 
@@ -881,12 +1432,18 @@ namespace TriangleNet.Meshing
                         // Record any new bad triangles that result.
                         SplitEncSegs(true);
                     }
+                    else
+                    {
+                        queue.Release(badtri);
+                    }
                 }
             }
 
             // At this point, if the "-D" switch was selected and we haven't run out
             // of Steiner points, the triangulation should be (conforming) Delaunay
             // and have no low-quality triangles.
+
+            CheckOrientation();
 
             // Might we have run out of Steiner points too soon?
             if (Log.Verbose && behavior.ConformingDelaunay && (badsubsegs.Count > 0) && (mesh.steinerleft == 0))

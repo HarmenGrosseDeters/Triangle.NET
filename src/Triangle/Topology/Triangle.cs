@@ -21,9 +21,18 @@ namespace TriangleNet.Topology
         // The ID is only used for mesh output.
         internal int id;
 
-        internal Otri[] neighbors;
-        internal Vertex[] vertices;
-        internal Osub[] subsegs;
+#if NET8_0_OR_GREATER
+        // The vertices, adjoining triangles and subsegments are stored inline. With arrays, a
+        // triangle consists of four objects on the heap, which make up more than half of all
+        // allocations of a quality mesh and a large part of the garbage collection time.
+        internal Buffer3<Vertex> vertices;
+        internal Buffer3<Otri> neighbors;
+        internal Buffer3<Osub> subsegs;
+#else
+        internal Vertex[] vertices = new Vertex[3];
+        internal Otri[] neighbors = new Otri[3];
+        internal Osub[] subsegs = new Osub[3];
+#endif
         internal int label;
         internal double area;
         internal bool infected;
@@ -33,16 +42,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public Triangle()
         {
-            // Three NULL vertices.
-            vertices = new Vertex[3];
-
-            // Initialize the three adjoining subsegments to be the omnipresent subsegment.
-            subsegs = new Osub[3];
-
-            // Initialize the three adjoining triangles to be "outer space".
-            neighbors = new Otri[3];
-
-            // area = -1.0;
+            // The vertices, adjoining subsegments and triangles are null (default).
         }
 
         #region Public properties

@@ -33,7 +33,7 @@ namespace TriangleNet.IO
         /// <inheritdoc />
         public IMesh Import(string filename)
         {
-            string ext = Path.GetExtension(filename);
+            string ext = Path.GetExtension(filename).ToLowerInvariant();
 
             if (ext == ".node" || ext == ".poly" || ext == ".ele")
             {
@@ -69,7 +69,7 @@ namespace TriangleNet.IO
         /// <inheritdoc />
         public IPolygon Read(string filename)
         {
-            string ext = Path.GetExtension(filename);
+            string ext = Path.GetExtension(filename).ToLowerInvariant();
 
             if (ext == ".node")
             {

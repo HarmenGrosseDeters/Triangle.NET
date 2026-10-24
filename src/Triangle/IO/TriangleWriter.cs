@@ -18,6 +18,28 @@ namespace TriangleNet.IO
     /// </summary>
     public class TriangleWriter
     {
+        /// <summary>
+        /// Writes numbers culture-independent (also integers, e.g. negative labels).
+        /// </summary>
+        private sealed class InvariantStreamWriter : StreamWriter
+        {
+            public InvariantStreamWriter(string path)
+                : base(path)
+            {
+            }
+
+            public override System.IFormatProvider FormatProvider => CultureInfo.InvariantCulture;
+        }
+
+        private sealed class ReferenceComparer : IEqualityComparer<Vertex>
+        {
+            public static readonly ReferenceComparer Instance = new ReferenceComparer();
+
+            public bool Equals(Vertex a, Vertex b) => ReferenceEquals(a, b);
+
+            public int GetHashCode(Vertex v) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(v);
+        }
+
         private static readonly NumberFormatInfo nfi = NumberFormatInfo.InvariantInfo;
 
         /// <summary>
@@ -38,7 +60,7 @@ namespace TriangleNet.IO
         /// <param name="filename"></param>
         public void WriteNodes(Mesh mesh, string filename)
         {
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             WriteNodes(writer, mesh);
         }
@@ -113,6 +135,13 @@ namespace TriangleNet.IO
             {
                 if (!jettison || vertex.type != VertexType.UndeadVertex)
                 {
+                    if (jettison)
+                    {
+                        // Undead vertices are skipped: elements and segments must refer to
+                        // the compacted numbering.
+                        vertex.id = index;
+                    }
+
                     // Vertex number, x and y coordinates.
                     writer.Write("{0} {1} {2}", index, vertex.x.ToString(nfi), vertex.y.ToString(nfi));
 
@@ -151,7 +180,7 @@ namespace TriangleNet.IO
 
             tri.orient = 0;
 
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             // Number of triangles, vertices per triangle, attributes per triangle.
             writer.WriteLine("{0} 3 {1}", mesh.triangles.Count, regions ? 1 : 0);
@@ -191,7 +220,7 @@ namespace TriangleNet.IO
         {
             bool hasMarkers = polygon.HasSegmentMarkers;
 
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             // TODO: write vertex attributes
 
@@ -203,20 +232,42 @@ namespace TriangleNet.IO
             // Number of segments, number of boundary markers (zero or one).
             writer.WriteLine("{0} {1}", polygon.Segments.Count, hasMarkers ? "1" : "0");
 
+            // The nodes are numbered by their position in the list (not by their ID, which
+            // isn't set for polygons built from contours).
+            var index = new Dictionary<Vertex, int>(polygon.Points.Count, ReferenceComparer.Instance);
+
+            for (int i = 0; i < polygon.Points.Count; i++)
+            {
+                if (!index.ContainsKey(polygon.Points[i]))
+                {
+                    index.Add(polygon.Points[i], i);
+                }
+            }
+
+            int Index(Vertex v)
+            {
+                if (index.TryGetValue(v, out int i))
+                {
+                    return i;
+                }
+
+                throw new System.InvalidOperationException("Segment endpoint is not in the list of polygon points.");
+            }
+
             int j = 0;
             foreach (var seg in polygon.Segments)
             {
-                var p = seg.GetVertex(0);
-                var q = seg.GetVertex(1);
+                int p = Index(seg.GetVertex(0));
+                int q = Index(seg.GetVertex(1));
 
                 // Segment number, indices of its two endpoints, and possibly a marker.
                 if (hasMarkers)
                 {
-                    writer.WriteLine("{0} {1} {2} {3}", j, p.ID, q.ID, seg.Label);
+                    writer.WriteLine("{0} {1} {2} {3}", j, p, q, seg.Label);
                 }
                 else
                 {
-                    writer.WriteLine("{0} {1} {2}", j, p.ID, q.ID);
+                    writer.WriteLine("{0} {1} {2}", j, p, q);
                 }
 
                 j++;
@@ -237,8 +288,8 @@ namespace TriangleNet.IO
                 writer.WriteLine("{0}", polygon.Regions.Count);
                 foreach (var region in polygon.Regions)
                 {
-                    writer.WriteLine("{0} {1} {2} {3}", j, region.Point.X.ToString(nfi),
-                        region.Point.Y.ToString(nfi), region.Label);
+                    writer.WriteLine("{0} {1} {2} {3} {4}", j, region.Point.X.ToString(nfi),
+                        region.Point.Y.ToString(nfi), region.Label, region.Area.ToString(nfi));
 
                     j++;
                 }
@@ -270,7 +321,7 @@ namespace TriangleNet.IO
 
             bool useBoundaryMarkers = mesh.behavior.UseBoundaryMarkers;
 
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             if (writeNodes)
             {
@@ -328,8 +379,8 @@ namespace TriangleNet.IO
                 writer.WriteLine("{0}", mesh.regions.Count);
                 foreach (var region in mesh.regions)
                 {
-                    writer.WriteLine("{0} {1} {2} {3}", j, region.Point.X.ToString(nfi),
-                        region.Point.Y.ToString(nfi), region.Label);
+                    writer.WriteLine("{0} {1} {2} {3} {4}", j, region.Point.X.ToString(nfi),
+                        region.Point.Y.ToString(nfi), region.Label, region.Area.ToString(nfi));
 
                     j++;
                 }
@@ -348,7 +399,7 @@ namespace TriangleNet.IO
 
             var behavior = mesh.behavior;
 
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             // Number of edges, number of boundary markers (zero or one).
             writer.WriteLine("{0} {1}", mesh.NumberOfEdges, behavior.UseBoundaryMarkers ? "1" : "0");
@@ -421,7 +472,7 @@ namespace TriangleNet.IO
             int n1, n2, n3;
             int i = 0;
 
-            using var writer = new StreamWriter(filename);
+            using var writer = new InvariantStreamWriter(filename);
 
             // Number of triangles, three neighbors per triangle.
             writer.WriteLine("{0} 3", mesh.triangles.Count);

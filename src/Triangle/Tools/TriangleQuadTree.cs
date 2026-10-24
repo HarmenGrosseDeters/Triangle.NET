@@ -84,35 +84,15 @@ namespace TriangleNet.Tools
         /// <returns>True, if point is inside or on the edge of this triangle.</returns>
         internal static bool IsPointInTriangle(Point p, Point t0, Point t1, Point t2)
         {
-            // TODO: no need to create new Point instances here
-            Point d0 = new Point(t1.x - t0.x, t1.y - t0.y);
-            Point d1 = new Point(t2.x - t0.x, t2.y - t0.y);
-            Point d2 = new Point(p.x - t0.x, p.y - t0.y);
+            // Exact orientation tests (the former barycentric test divided and missed points on
+            // interior edges). Works for both orientations of the triangle.
+            var predicates = RobustPredicates.Default;
 
-            // crossproduct of (0, 0, 1) and d0
-            Point c0 = new Point(-d0.y, d0.x);
+            double o0 = predicates.CounterClockwise(t0, t1, p);
+            double o1 = predicates.CounterClockwise(t1, t2, p);
+            double o2 = predicates.CounterClockwise(t2, t0, p);
 
-            // crossproduct of (0, 0, 1) and d1
-            Point c1 = new Point(-d1.y, d1.x);
-
-            // Linear combination d2 = s * d0 + v * d1.
-            //
-            // Multiply both sides of the equation with c0 and c1
-            // and solve for s and v respectively
-            //
-            // s = d2 * c1 / d0 * c1
-            // v = d2 * c0 / d1 * c0
-
-            double s = DotProduct(d2, c1) / DotProduct(d0, c1);
-            double v = DotProduct(d2, c0) / DotProduct(d1, c0);
-
-            if (s >= 0 && v >= 0 && ((s + v) <= 1))
-            {
-                // Point is inside or on the edge of this triangle.
-                return true;
-            }
-
-            return false;
+            return (o0 >= 0 && o1 >= 0 && o2 >= 0) || (o0 <= 0 && o1 <= 0 && o2 <= 0);
         }
 
         internal static double DotProduct(Point p, Point q)

@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Linq;
 using System.Threading;
 
 namespace TriangleNet.Smoothing
@@ -46,9 +47,11 @@ namespace TriangleNet.Smoothing
             this.factory = factory;
             pool = new TrianglePool();
 
+            // Each triangulation needs its own pool: the final mesh is handed to the caller and
+            // must not be overwritten when the smoother is used again.
             config = new Configuration(
                 () => RobustPredicates.Default,
-                () => pool.Restart());
+                () => new TrianglePool());
 
             options = new ConstraintOptions() { ConformingDelaunay = true };
         }
@@ -95,6 +98,7 @@ namespace TriangleNet.Smoothing
 
             // The smoother should respect the mesh segment splitting behavior.
             options.SegmentSplitting = smoothedMesh.behavior.NoBisect;
+            options.CanSplitSegment = smoothedMesh.behavior.CanSplitSegment;
 
             // The maximum distances moved from any site at the previous and
             // current iterations.
@@ -102,26 +106,49 @@ namespace TriangleNet.Smoothing
                 prevMax = double.PositiveInfinity,
                 currMax = 1d;
 
+            // The vertices of the input mesh are moved: remember their positions, so the mesh
+            // stays unchanged if smoothing is cancelled or fails.
+            var original = smoothedMesh.vertices.Values.Select(v => (v, v.x, v.y, v.type, v.tri)).ToList();
+
             // Take a few smoothing rounds (Lloyd's algorithm). The stop
             // criteria are the maximum number of iterations and the convergence
-            // criterion.
+            // criterion (which needs two real iterations, currMax = 1 is only a
+            // placeholder and must not be compared).
             int i = 0;
-            while (i < limit && Math.Abs(currMax - prevMax) > tol * currMax)
+
+            try
             {
-                // throw an OperationCanceledException if cancellation is requested
-                cancellationToken.ThrowIfCancellationRequested();
+                while (i < limit && (i < 2 || Math.Abs(currMax - prevMax) > tol * currMax))
+                {
+                    // throw an OperationCanceledException if cancellation is requested
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                prevMax = currMax;
-                currMax = Step(smoothedMesh, factory, predicates);
+                    prevMax = currMax;
+                    currMax = Step(smoothedMesh, factory, predicates);
 
-                // Actually, we only want to rebuild, if the mesh is no longer
-                // Delaunay. Flipping edges could be the right choice instead 
-                // of re-triangulating...
-                smoothedMesh = (Mesh)mesher.Triangulate(Rebuild(smoothedMesh), options);
+                    // Actually, we only want to rebuild, if the mesh is no longer
+                    // Delaunay. Flipping edges could be the right choice instead 
+                    // of re-triangulating...
+                    smoothedMesh = (Mesh)mesher.Triangulate(Rebuild(smoothedMesh), options);
+
+                    factory.Reset();
+
+                    i++;
+                }
+            }
+            catch
+            {
+                foreach (var (v, x, y, type, tri) in original)
+                {
+                    v.x = x;
+                    v.y = y;
+                    v.type = type;
+                    v.tri = tri;
+                }
 
                 factory.Reset();
 
-                i++;
+                throw;
             }
 
             smoothedMesh.CopyTo((Mesh)mesh);
@@ -173,22 +200,34 @@ namespace TriangleNet.Smoothing
 
             Point p, q;
 
+            // Use coordinates relative to the generator to avoid catastrophic
+            // cancellation for meshes located far away from the origin.
+            double ox = face.generator.x;
+            double oy = face.generator.y;
+
+            double px, py, qx, qy;
+
             do
             {
                 p = edge.Origin;
                 q = edge.Twin.Origin;
 
-                ai = p.x * q.y - q.x * p.y;
+                px = p.x - ox;
+                py = p.y - oy;
+                qx = q.x - ox;
+                qy = q.y - oy;
+
+                ai = px * qy - qx * py;
                 atmp += ai;
-                xtmp += (q.x + p.x) * ai;
-                ytmp += (q.y + p.y) * ai;
+                xtmp += (qx + px) * ai;
+                ytmp += (qy + py) * ai;
 
                 edge = edge.Next;
 
             } while (edge.Next.ID != first);
 
-            x = xtmp / (3 * atmp);
-            y = ytmp / (3 * atmp);
+            x = ox + xtmp / (3 * atmp);
+            y = oy + ytmp / (3 * atmp);
 
             //area = atmp / 2;
         }

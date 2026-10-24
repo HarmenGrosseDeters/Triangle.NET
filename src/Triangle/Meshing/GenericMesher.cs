@@ -114,6 +114,23 @@ namespace TriangleNet.Meshing
         /// <returns>The mesh.</returns>
         public IMesh Triangulate(IPolygon polygon, ConstraintOptions options, QualityOptions quality, CancellationToken cancellationToken = default)
         {
+            double grid = options?.GridSize ?? 0.0;
+
+            if (options?.ResolveIntersections ?? true)
+            {
+                // Split intersecting segments in advance.
+                if (grid <= 0.0 || options.SnapTolerance > 0.0 || options.WedgeTolerance > 0.0)
+                {
+                    polygon = SegmentNoder.Node(polygon, config.Predicates(), out _, minTolerance: options?.SnapTolerance ?? 0.0,
+                        wedgeTolerance: options?.WedgeTolerance ?? 0.0);
+                }
+
+                if (grid > 0.0)
+                {
+                    polygon = SegmentNoder.SnapRound(polygon, config.Predicates(), grid);
+                }
+            }
+
             var mesh = (Mesh)triangulator.Triangulate(polygon.Points, config);
 
             var cmesher = new ConstraintMesher(mesh, config);
@@ -121,11 +138,19 @@ namespace TriangleNet.Meshing
 
             mesh.SetQualityMesher(qmesher);
 
+            qmesher.GridSize = grid;
+
             // Insert segments.
             cmesher.Apply(polygon, options);
 
             // Refine mesh.
             qmesher.Apply(quality, options?.ConformingDelaunay ?? false, cancellationToken);
+
+            if (grid > 0.0)
+            {
+                // Move the Steiner points to the grid.
+                GridSnapper.SnapVertices(mesh, grid);
+            }
 
             return mesh;
         }

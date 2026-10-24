@@ -160,6 +160,11 @@ namespace TriangleNet.Geometry
         /// <inheritdoc />
         public int CompareTo(Point other)
         {
+            if (other is null)
+            {
+                return 1;
+            }
+
             if (x == other.x && y == other.y)
             {
                 return 0;

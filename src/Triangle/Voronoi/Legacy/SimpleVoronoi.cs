@@ -100,6 +100,12 @@ namespace TriangleNet.Voronoi.Legacy
             // Add all Voronoi regions to the map.
             foreach (var vertex in mesh.vertices.Values)
             {
+                // Duplicate input vertices aren't part of the mesh.
+                if (vertex.type == VertexType.UndeadVertex)
+                {
+                    continue;
+                }
+
                 regions.Add(vertex.id, new VoronoiRegion(vertex));
             }
 
@@ -131,6 +137,9 @@ namespace TriangleNet.Voronoi.Legacy
 
                 bounds.Expand(pt);
             }
+
+            // Include the mesh (the circumcenters alone may coincide, e.g. a single triangle).
+            bounds.Expand(mesh.bounds);
 
             double ds = Math.Max(bounds.Width, bounds.Height);
             bounds.Resize(ds / 10, ds / 10);

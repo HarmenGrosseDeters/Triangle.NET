@@ -18,9 +18,16 @@ namespace TriangleNet.Topology
         // Hash for dictionary. Will be set by mesh instance.
         internal int hash;
 
-        internal Osub[] subsegs;
-        internal Vertex[] vertices;
-        internal Otri[] triangles;
+#if NET8_0_OR_GREATER
+        // Stored inline instead of arrays (fewer objects on the heap, see Triangle).
+        internal Buffer2<Osub> subsegs;
+        internal Buffer4<Vertex> vertices;
+        internal Buffer2<Otri> triangles;
+#else
+        internal Osub[] subsegs = new Osub[2];
+        internal Vertex[] vertices = new Vertex[4];
+        internal Otri[] triangles = new Otri[2];
+#endif
         internal int boundary;
 
         /// <summary>
@@ -28,18 +35,8 @@ namespace TriangleNet.Topology
         /// </summary>
         public SubSegment()
         {
-            // Four NULL vertices.
-            vertices = new Vertex[4];
-
-            // Set the boundary marker to zero.
-            boundary = 0;
-
-            // Initialize the two adjoining subsegments to be the omnipresent
-            // subsegment.
-            subsegs = new Osub[2];
-
-            // Initialize the two adjoining triangles to be "outer space."
-            triangles = new Otri[2];
+            // The vertices, adjoining subsegments and triangles are null (default), the
+            // boundary marker is zero.
         }
 
         #region Public properties

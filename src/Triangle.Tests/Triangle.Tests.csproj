@@ -5,6 +5,8 @@
     <RootNamespace>TriangleNet.Tests</RootNamespace>
     <AssemblyName>Triangle.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- Custom entry point (see Program.cs) used to run crash-prone scenarios in a child process. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
 
@@ -15,6 +17,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Characterization\Data\*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

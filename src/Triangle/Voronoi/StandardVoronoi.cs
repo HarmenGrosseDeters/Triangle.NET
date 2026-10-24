@@ -43,7 +43,8 @@ namespace TriangleNet.Voronoi
         public StandardVoronoi(Mesh mesh, Rectangle box, IVoronoiFactory factory, IPredicates predicates)
             : base(mesh, factory, predicates, true)
         {
-            // We assume the box to be at least as large as the mesh.
+            // We assume the box to be at least as large as the mesh (don't modify the argument).
+            box = new Rectangle(box);
             box.Expand(mesh.bounds);
 
             // We explicitly told the base constructor to call the Generate method, so

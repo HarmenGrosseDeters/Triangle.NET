@@ -33,17 +33,12 @@ namespace TriangleNet.Tests.Tools
 
             var pmatrix = new AdjacencyMatrix(mesh, false);
 
-            Assert.That(new int[] { 0, 3, 7, 11, 15, 21, 24 }, Is.EqualTo(pmatrix.ColumnPointers).AsCollection);
-            Assert.That(new int[] {
-                0, 2, 4,
-                1, 2, 3, 4,
-                0, 1, 2, 4,
-                1, 3, 4, 5,
-                0, 1, 2, 3, 4, 5,
-                3, 4, 5 }, Is.EqualTo(pmatrix.RowIndices).AsCollection);
-
-            // For structured meshes we cannot expect an improved bandwidth.
-            Assert.That(pmatrix.Bandwidth(), Is.EqualTo(9));
+            // The structured mesh is already numbered optimally: RCM keeps the numbering (the
+            // old result, with bandwidth 9 instead of 7, was caused by 1-based index leftovers
+            // in the neighbor sorting).
+            Assert.That(p, Is.EqualTo(new int[] { 0, 1, 2, 3, 4, 5 }).AsCollection);
+            Assert.That(new int[] { 0, 4, 7, 11, 17, 21, 24 }, Is.EqualTo(pmatrix.ColumnPointers).AsCollection);
+            Assert.That(pmatrix.Bandwidth(), Is.EqualTo(7));
         }
     }
 }
