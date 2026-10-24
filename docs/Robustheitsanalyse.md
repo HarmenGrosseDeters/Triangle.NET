@@ -6,6 +6,12 @@ Eingaben und Gleitkomma-Grenzfällen.
 > **Update:** Alle Befunde sind inzwischen behoben, siehe [Abschnitt „Fixes“](#fixes). Die
 > Analyse unten beschreibt den Zustand **vor** den Fixes. Die Bewertung des alten,
 > angepassten Stands steht in [Alter-Stand-Bewertung.md](Alter-Stand-Bewertung.md).
+>
+> **Zweite Runde (Qualitätsvermaschung):** Drei Fehler der aCute-Verfeinerung (auch in Upstream)
+> und ein Noder-Fehler beim Snapping sind behoben; auf ALKIS-Daten (Flurstücke, Gebäude, Nutzung)
+> sank der Anteil schlechter Dreiecke von 8,7 % auf 1,1 %. Siehe
+> [Ergebnisse mit echten Daten](#ergebnisse-mit-echten-daten-alkis-und-dgm1-herne-opengeodatanrwde)
+> und [Absicherung für Performance-Arbeit](#absicherung-für-performance-arbeit-srctriangletestscharacterization).
 
 ## Kurzfazit
 
@@ -172,6 +178,9 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | neu | **Präzisionsgrenze bei der Verfeinerung:** Würde das Teilen eines Segments (mit exakter Prüfung) ein flaches/invertiertes Dreieck erzeugen oder fällt der Teilungspunkt auf einen Endpunkt, wird das Teilsegment nicht geteilt und für den Rest der Verfeinerung gesperrt (statt still invertierter Dreiecke bzw. „Ran out of precision“). Zu kleine Dreiecke bleiben stehen (statt „new vertex at circumcenter“). Abschließende Orientierungsprüfung → laute Exception statt ungültigem Netz. | `Meshing/QualityMesher.cs` |
 | neu | **`ConstraintOptions.SnapTolerance`** (Standard 0 = automatisch): Mindesttoleranz des Noders in Koordinateneinheiten, passend zur Datengenauigkeit (z. B. `0.01` = 1 cm). Fast deckungsgleiche Linien (Gebäude an Flurstücksgrenzen, doppelt digitalisierte Grenzen) werden zusammengeführt statt zu Slivers vermascht. Die Geometrie ändert sich dabei um höchstens die Toleranz. | `Meshing/ConstraintOptions.cs`, `Meshing/SegmentNoder.cs` |
 | neu | Snap-Zyklus: Bei großer Toleranz konnte ein Punkt in ein Segment gesnappt werden, dessen Teilstück dann den ursprünglichen Endpunkt wieder einfing (Endlosschleife bis zum Iterationslimit → Exception). Bereits geteilte Segmente werden jetzt nicht erneut aus ihren Teilstücken erzeugt. | `Meshing/SegmentNoder.cs` |
+| neu | **aCute: schlechte Dreiecke gingen verloren.** Der aCute-Ort liegt nicht immer im Umkreis des schlechten Dreiecks; dann blieb das Dreieck nach dem Einfügen bestehen, war aber schon aus der Warteschlange entfernt. Folge: `MaximumArea` wurde verletzt (Quadrat, 20°: 9 zu große Dreiecke), und auf ALKIS-Daten blieben viele Dreiecke unter dem Mindestwinkel (Kachel 381000/5710400, 30°: **618 statt 9**, zugleich 20× langsamer). Jetzt wird ein aCute-Ort nur verwendet, wenn er echt im Umkreis und nicht (fast) auf einer Ecke liegt, und ein überlebendes Dreieck wird über den Umkreismittelpunkt geteilt. Fehler auch in Upstream. | `Meshing/QualityMesher.cs` |
+| neu | **aCute: Endlosverschiebung von Punkten.** aCute verschiebt („relocation“) Punkte, indem es sie löscht und neu einfügt. Mit Flächenvorgaben pro Region wurde derselbe Punkt immer wieder hin und her verschoben. Upstream wirft „The new vertex is at the circumcenter of triangle“; nach den ersten Fixes lief die Verfeinerung bis zum Steiner-Limit und lieferte ein grobes Netz (5 Dreiecke). Jetzt wird jeder Punkt höchstens einmal verschoben. | `NewLocation.cs`, `Meshing/QualityMesher.cs` |
+| neu | **Noder: Schnittpunkt am Segmentende blockierte das Snapping.** Ein Schnittpunkt nahe einem Segmentende wurde mit dem Endpunkt verschmolzen und das Segment dort „geteilt“. Das änderte nichts, markierte das Segment aber als bereits geteilt, sodass ein fast kollinearer Punkt nicht mehr hineingesnappt wurde. Zwei Segmente mit 0,0002° Zwischenwinkel blieben stehen, und die Qualitätsvermaschung verbrauchte das gesamte Steiner-Budget in diesem Keil (ALKIS Herne mit Nutzung, 1 cm: 203.175 Dreiecke, davon 154.870 unter 20° → 24.355 Dreiecke, 222 unter 20°). Die unnötigen Teilungen verbrauchten außerdem Noding-Iterationen: Gestapelte Quadrate mit 1e-6 Versatz werden jetzt vernetzt statt abgelehnt. | `Meshing/SegmentNoder.cs` |
 | neu | `FastExpansionSumZeroElim` las (wie das C-Original) ein Element hinter dem Ende einer Expansion; in C# eine `IndexOutOfRangeException`, ausgelöst durch unendliche Koordinaten. | `RobustPredicates.cs` |
 
 **Ergebnis (Fuzzing, jeder Fall in eigenem Prozess):**
@@ -186,7 +195,7 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | 200 Segmente auf 50er-Raster, 20° | – | 50/50 |
 | Nachbarflächen mit Abweichung 1e-12, 25°, **ohne** Steiner-Limit | terminiert nicht | ~30 ms |
 
-Die Testsuite hat jetzt 234 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
+Die Testsuite hat jetzt 404 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
 Regressionstests geworden.
 
 ### Externer Korpus: GEOS-Robustheitstests
@@ -224,8 +233,97 @@ dotnet test src/Triangle.Tests --filter TestCategory=Corpus
 
 Die NRW-Läufe zerlegen die Flurstücke in Kacheln (vollständige Flurstücke inklusive ihrer
 Nachbarn, also mit doppelt digitalisierten gemeinsamen Grenzen) bzw. kombinieren ein 1-m-Raster
-des DGM1 mit den Flurstücksgrenzen als Bruchkanten. In dieser Entwicklungsumgebung waren die
-NRW-Portale nicht erreichbar; geprüft wurde der Ablauf mit synthetischen Daten im gleichen Format.
+des DGM1 mit den Flurstücksgrenzen als Bruchkanten. `TRIANGLE_CORPUS_ANGLES` (z. B. `20,25,30,33`)
+legt die Mindestwinkel fest; die Ausgabe enthält je Winkel Laufzeit, Dreiecke, Anzahl der Fälle
+am Steiner-Limit, Anteil schlechter Dreiecke und die schlechtesten Kacheln.
+
+### Ergebnisse mit echten Daten: ALKIS und DGM1 Herne (opengeodata.nrw.de)
+
+201 Kacheln à 200 m (gleichmäßig über das Stadtgebiet verteilt), jeweils 20°, 25°, 30° und 33°
+Mindestwinkel, 100.000 Steiner-Punkte, jeder Lauf in eigenem Prozess (Release):
+
+| Daten | Snap | gültig | schlechte Dreiecke 20° / 30° | vorher (vor aCute- und Noder-Fix) |
+|-------|------|--------|-----------------------------|-----------------------------------|
+| Flurstücke | 5 µm (auto) | 804/804 | 0,44 % / 0,47 % | nicht gemessen (Einzelkachel 381000/5710400, 30°: 618 statt 9 schlechte Dreiecke) |
+| Flurstücke | 1 cm | 804/804 | 0,44 % / 0,47 % | 0,44 % / 1,08 % |
+| Flurstücke + Gebäude + Nutzung | 1 cm | 804/804, kein Steiner-Limit | **1,10 % / 0,98 %** | 8,70 % / 10,74 %, 1–2 Kacheln am Steiner-Limit |
+| DGM1-Raster (1 m) + Flurstücksgrenzen | 5 µm | 8/8 | – | – |
+
+Bei Flurstücken + Gebäuden + Nutzung ohne Snapping laufen einzelne Kacheln ans Steiner-Limit
+(z. B. 400.000 statt 50.000 Dreiecke), deshalb ist 1 cm im Fallback-Adapter jetzt Standard.
+
+Die verbleibenden schlechten Dreiecke liegen fast alle an Segmenten, in Keilen sehr kleiner
+Eingabewinkel: Linien verschiedener Ebenen (Nutzung, Gebäude, Flurstück), die über viele Meter
+mit 0,01–0,1° auseinanderlaufen und erst nach mehr als 1 cm getrennt sind. Dort verfeinert
+Triangle bewusst nicht weiter (sonst terminiert die Verfeinerung nicht). Abhilfe ist nur eine
+größere Snap-Toleranz, also eine Datenentscheidung: In der schlechtesten Kachel sinkt der Anteil
+mit 2 cm von 1.931 auf 105 schlechte Dreiecke (und halb so viele Dreiecke).
+
+## Absicherung für Performance-Arbeit (`src/Triangle.Tests/Characterization`)
+
+Performance-Optimierungen dürfen das Ergebnis nicht unbemerkt verändern. Dafür gibt es drei
+Bausteine, die alle auf demselben Szenario-Katalog `MeshCases` arbeiten (77 Szenarien: Punktmengen
+mit allen drei Algorithmen, Polygone mit Loch, Stern mit 5°-Winkeln, kreuzende Segmente,
+Flurstücke mit 1-mm-Abweichungen, Bruchkanten in Gauß-Krüger-Koordinaten, drei echte
+ALKIS-Kacheln aus Herne; jeweils CDT, Conforming Delaunay, 20°/25°/28° (legacy)/30°/33°,
+`SegmentSplitting` 1/2, gesperrte Segmente, Flächenvorgaben fest und pro Region, zweifaches
+Verfeinern, Glätten, Snapping 1 cm):
+
+| Baustein | Prüft | Zweck |
+|----------|-------|-------|
+| `InvariantTest` | Konsistenz, keine flachen/invertierten Dreiecke, **(eingeschränkt) Delaunay** mit exaktem InCircle-Test, Fläche gegenüber der unverfeinerten Triangulierung, alle Eingabesegmente vorhanden, gesperrte Segmente ungeteilt, Mindestwinkel (wo garantiert), Maximalfläche | Eigenschaften, die jede korrekte Implementierung erfüllen muss. Gilt auch nach Optimierungen, die das Ergebnis legitim ändern. |
+| `GoldenMeshTest` | Fingerabdruck (SHA-256 über alle Dreiecke und Teilsegmente, bitgenau, unabhängig von der Reihenfolge) gegen `golden.txt` | Verhaltensneutrale Optimierungen müssen alle Fingerabdrücke erhalten. Ändert eine Optimierung das Ergebnis bewusst: Invarianten prüfen, Qualitätsstatistik vergleichen, dann mit `TRIANGLE_UPDATE_GOLDEN=1` neu erzeugen und die Änderung im Commit begründen. |
+| `Triangle.Benchmarks` | BenchmarkDotNet (Zeit, Allokationen) für 12 repräsentative Szenarien | Messen vor/nach jeder Optimierung. |
+
+```
+dotnet test src/Triangle.Tests --filter TestCategory=Characterization
+TRIANGLE_UPDATE_GOLDEN=1 dotnet test src/Triangle.Tests --filter Name~Golden   # bewusst neu erzeugen
+dotnet run -c Release --project src/Triangle.Benchmarks -- --filter "*"
+```
+
+Die Invariantentests haben bereits beim Aufbau drei echte Fehler gefunden (aCute, siehe Fixes)
+und eine Präzisionsgrenze sichtbar gemacht: Ein auf ein Segment eingefügter Punkt wird auf den
+nächsten darstellbaren Punkt gerundet und kann einige ulp neben dem Segment liegen. Die Kanten an
+diesem Punkt werden (wie im C-Original) nicht geflippt, sodass der exakte InCircle-Test in seltenen
+Fällen eine Delaunay-Verletzung meldet. Das ist für die Gültigkeit des Netzes unerheblich und wird
+im Test als Rundungsartefakt erkannt (Kollinearität bis auf 8 ulp).
+
+Die Zeilenabdeckung der Kernklassen liegt bei 87–98 % (`Mesh` 92 %, `QualityMesher` 92 %,
+`ConstraintMesher` 87 %, `SegmentNoder` 98 %, Prädikate 93 %); `NewLocation` (aCute) 74 %.
+
+### Gemessene Hotspots (Ausgangspunkt für die Performance-Arbeit)
+
+Profil mit `dotnet-trace` (Sampling, Release):
+
+* **Reale Daten** (ALKIS-Kachel, 30°, Snap 1 cm): Die aCute-Ortsbestimmung (`NewLocation`)
+  braucht rund 45 % der Zeit, davon `GetNeighborsVertex` 19 %, `SplitConvexPolygon` 9 % und
+  `HalfPlaneIntersection` 4 %; `Mesh.InsertVertex` 23 %. Die Allokationen liegen bei rund 100 MB
+  für 100.000 Dreiecke.
+* **Pathologischer Fall** (GEOS `TestRelateAA#74`, zwei Nadeldreiecke 10⁶ : 1, 8 Eingabepunkte):
+  92 % der Zeit in `InsertVertex` und `UndoVertex`. Ein Umkreismittelpunkt wird eingefügt, löst
+  eine lange Flip-Kaskade aus, beeinträchtigt dann ein Segment („encroaching“) und wird komplett
+  zurückgenommen. Das ist quadratisch (100.000 Punkte in 85 s statt rund 1 s). Ansatz: das
+  Beeinträchtigen von Segmenten vor dem Umbau des Netzes prüfen.
+
+Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Kernen):
+
+| Szenario | Zeit | Allokationen |
+|----------|-----:|-------------:|
+| points-random/dwyer (3.000 Punkte) | 3,0 ms | 1,8 MB |
+| points-grid/dwyer (1.600 Rasterpunkte) | 3,3 ms | 7,3 MB |
+| points-utm/sweepline | 4,0 ms | 2,3 MB |
+| points-random/q30 | 44 ms | 10,5 MB |
+| crossing-segments/q20 | 4,6 ms | 2,0 MB |
+| utm-breaklines/q33 | 11,5 ms | 4,0 MB |
+| regions/q25-variable-area | 5,7 ms | 1,8 MB |
+| square/smooth | 2,5 ms | 1,7 MB |
+| parcels-mismatch/q20 (Steiner-Limit) | 1.513 ms | 246 MB |
+| herne_371800_5710600/q20-snap1cm | 42 ms | 9,4 MB |
+| herne_373600_5709000/q20-snap1cm | 317 ms | 51 MB |
+| herne_373600_5709000/q30-snap1cm | 902 ms | 104 MB |
+
+Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
+(bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
 
 ## Die Testsuite (`src/Triangle.Tests/Robustness`)
 
