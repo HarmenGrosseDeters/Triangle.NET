@@ -34,7 +34,16 @@ namespace TriangleNet.Benchmarks
 
         private MeshCases.Case scenario;
 
-        public IEnumerable<string> Scenarios() => Representative;
+        /// <summary>
+        /// The scenarios to run: <see cref="Representative"/>, or the comma separated list in the
+        /// environment variable TRIANGLE_BENCH_SCENARIOS.
+        /// </summary>
+        public IEnumerable<string> Scenarios()
+        {
+            var selection = System.Environment.GetEnvironmentVariable("TRIANGLE_BENCH_SCENARIOS");
+
+            return string.IsNullOrEmpty(selection) ? Representative : selection.Split(',');
+        }
 
         [ParamsSource(nameof(Scenarios))]
         public string Scenario { get; set; }
