@@ -145,37 +145,44 @@ namespace TriangleNet.Tests.Corpus
         /// <summary>
         /// Split parcel rings into square tiles. Each tile contains all rings whose bounding box
         /// intersects the tile (rings are not clipped, so neighboring parcels and their shared,
-        /// possibly mismatched boundaries are complete).
+        /// possibly mismatched boundaries are complete). If there are more than maxTiles
+        /// non-empty tiles, tiles are sampled evenly.
         /// </summary>
         public static IEnumerable<CorpusCase> Tiles(string name, List<List<(double X, double Y)>> rings, double tileSize, int maxTiles)
         {
-            var boxes = rings.Select(r => (r, r.Min(p => p.X), r.Min(p => p.Y), r.Max(p => p.X), r.Max(p => p.Y))).ToList();
+            var tiles = new Dictionary<(long, long), List<List<(double X, double Y)>>>();
 
-            double left = boxes.Min(b => b.Item2), bottom = boxes.Min(b => b.Item3);
-            double right = boxes.Max(b => b.Item4), top = boxes.Max(b => b.Item5);
-
-            int count = 0;
-
-            for (double x = left; x < right && count < maxTiles; x += tileSize)
+            foreach (var r in rings)
             {
-                for (double y = bottom; y < top && count < maxTiles; y += tileSize)
+                long i0 = (long)Math.Floor(r.Min(p => p.X) / tileSize), i1 = (long)Math.Floor(r.Max(p => p.X) / tileSize);
+                long j0 = (long)Math.Floor(r.Min(p => p.Y) / tileSize), j1 = (long)Math.Floor(r.Max(p => p.Y) / tileSize);
+
+                for (long i = i0; i <= i1; i++)
                 {
-                    var c = new CorpusCase { Name = $"{name} tile {x:F0}/{y:F0}" };
-
-                    foreach (var b in boxes)
+                    for (long j = j0; j <= j1; j++)
                     {
-                        if (b.Item2 <= x + tileSize && b.Item4 >= x && b.Item3 <= y + tileSize && b.Item5 >= y)
+                        if (!tiles.TryGetValue((i, j), out var list))
                         {
-                            c.Lines.Add(b.r);
+                            list = new List<List<(double X, double Y)>>();
+                            tiles.Add((i, j), list);
                         }
-                    }
 
-                    if (c.Lines.Count > 0)
-                    {
-                        count++;
-                        yield return c;
+                        list.Add(r);
                     }
                 }
+            }
+
+            var keys = tiles.Keys.OrderBy(k => k.Item1).ThenBy(k => k.Item2).ToList();
+            double step = Math.Max(1.0, (double)keys.Count / maxTiles);
+
+            for (double k = 0; k < keys.Count; k += step)
+            {
+                var key = keys[(int)k];
+                var c = new CorpusCase { Name = $"{name} tile {key.Item1 * tileSize:F0}/{key.Item2 * tileSize:F0}" };
+
+                c.Lines.AddRange(tiles[key]);
+
+                yield return c;
             }
         }
     }

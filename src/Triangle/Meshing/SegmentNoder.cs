@@ -53,10 +53,11 @@ namespace TriangleNet.Meshing
         /// <param name="polygon">The input polygon (won't be modified).</param>
         /// <param name="predicates">The predicates used to detect crossings.</param>
         /// <param name="maxIterations">Maximum number of noding iterations per tolerance.</param>
+        /// <param name="minTolerance">Minimum absolute snap tolerance (0 = automatic).</param>
         /// <returns>The input polygon, if nothing had to be changed, otherwise a new polygon.</returns>
-        public static IPolygon Node(IPolygon polygon, IPredicates predicates, int maxIterations = 10)
+        public static IPolygon Node(IPolygon polygon, IPredicates predicates, int maxIterations = 10, double minTolerance = 0.0)
         {
-            return Node(polygon, predicates, out _, maxIterations);
+            return Node(polygon, predicates, out _, maxIterations, minTolerance);
         }
 
         /// <summary>
@@ -67,6 +68,9 @@ namespace TriangleNet.Meshing
         /// <param name="predicates">The predicates used to detect crossings.</param>
         /// <param name="tolerance">The absolute snap tolerance used.</param>
         /// <param name="maxIterations">Maximum number of noding iterations per tolerance.</param>
+        /// <param name="minTolerance">Minimum absolute snap tolerance (0 = automatic). Use this to
+        /// merge features below the precision of the data, e.g. 0.01 for coordinates in meters
+        /// which are only accurate to a centimeter.</param>
         /// <returns>The input polygon, if nothing had to be changed, otherwise a new polygon.</returns>
         /// <remarks>
         /// If noding doesn't converge (e.g. for many nearly coincident segments, where rounded
@@ -74,7 +78,7 @@ namespace TriangleNet.Meshing
         /// tolerance (up to <see cref="MaxRelativeTolerance"/>), like the snapping noder of GEOS.
         /// </remarks>
         /// <exception cref="InvalidOperationException">Noding doesn't converge.</exception>
-        public static IPolygon Node(IPolygon polygon, IPredicates predicates, out double tolerance, int maxIterations = 10)
+        public static IPolygon Node(IPolygon polygon, IPredicates predicates, out double tolerance, int maxIterations = 10, double minTolerance = 0.0)
         {
             tolerance = 0.0;
 
@@ -89,9 +93,21 @@ namespace TriangleNet.Meshing
             // Limit for the number of new vertices (to detect non-convergence early).
             int maxNewPoints = 50 * (polygon.Points.Count + polygon.Segments.Count) + 1000;
 
+            var tolerances = new List<double>();
+
             for (double relative = DefaultRelativeTolerance; relative <= MaxRelativeTolerance; relative *= 16)
             {
-                tolerance = relative * scale;
+                double t = Math.Max(relative * scale, minTolerance);
+
+                if (tolerances.Count == 0 || t > tolerances[tolerances.Count - 1])
+                {
+                    tolerances.Add(t);
+                }
+            }
+
+            foreach (var t in tolerances)
+            {
+                tolerance = t;
 
                 if (TryNode(polygon, predicates, tolerance, maxIterations, maxNewPoints, out var result))
                 {
@@ -141,6 +157,10 @@ namespace TriangleNet.Meshing
             bool changed = merged.Count > 0;
             bool converged = false;
 
+            // Segments which have been split. Snapping must not create them again: for vertices
+            // with distances close to the tolerance, snapping could otherwise go back and forth.
+            var retired = new HashSet<(Vertex, Vertex)>(new EdgeComparer());
+
             for (int iteration = 0; iteration < maxIterations && newPoints.Count <= maxNewPoints; iteration++)
             {
                 var splits = new Dictionary<int, List<(double, Vertex)>>();
@@ -149,13 +169,18 @@ namespace TriangleNet.Meshing
 
                 if (splits.Count == 0)
                 {
-                    AddNearbyVertices(segments, vertices.All, tolerance, splits);
+                    AddNearbyVertices(segments, vertices.All, tolerance, retired, splits);
                 }
 
                 if (splits.Count == 0)
                 {
                     converged = true;
                     break;
+                }
+
+                foreach (var i in splits.Keys)
+                {
+                    retired.Add((segments[i].GetVertex(0), segments[i].GetVertex(1)));
                 }
 
                 segments = Split(segments, splits);
@@ -342,7 +367,7 @@ namespace TriangleNet.Meshing
         /// tolerance to the segment.
         /// </summary>
         private static void AddNearbyVertices(List<ISegment> segments, ICollection<Vertex> vertices,
-            double tolerance, Dictionary<int, List<(double, Vertex)>> splits)
+            double tolerance, HashSet<(Vertex, Vertex)> retired, Dictionary<int, List<(double, Vertex)>> splits)
         {
             var grid = new VertexGrid(vertices);
 
@@ -381,7 +406,8 @@ namespace TriangleNet.Meshing
                     double distance = Math.Abs(dx * (v.y - a.y) - dy * (v.x - a.x)) / length;
                     double t = ((v.x - a.x) * dx + (v.y - a.y) * dy) / (length * length);
 
-                    if (distance <= tolerance && t > 0.0 && t < 1.0)
+                    if (distance <= tolerance && t > 0.0 && t < 1.0 &&
+                        !retired.Contains((a, v)) && !retired.Contains((v, b)))
                     {
                         AddSplit(splits, i, t, v);
                     }

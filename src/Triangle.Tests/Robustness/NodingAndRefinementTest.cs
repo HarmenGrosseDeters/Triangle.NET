@@ -204,5 +204,70 @@ namespace TriangleNet.Tests.Robustness
 
             MeshAssert.IsValid(mesh);
         }
+        private static Polygon ParcelWithBuilding(double gap)
+        {
+            // A parcel and a building whose wall runs along the parcel boundary at a distance
+            // of 'gap' (typical for cadastral data: separately digitized, nearly coincident lines).
+            var poly = new Polygon();
+
+            poly.Add(new Contour(new[] { new Vertex(370000, 5710000), new Vertex(370030, 5710000), new Vertex(370030, 5710020), new Vertex(370000, 5710020) }));
+            poly.Add(new Contour(new[] { new Vertex(370005, 5710000 + gap), new Vertex(370015, 5710000 + gap), new Vertex(370015, 5710008), new Vertex(370005, 5710008) }));
+
+            return poly;
+        }
+
+        [Test]
+        public void SnapToleranceRemovesSlivers()
+        {
+            // Building wall 5 mm inside the parcel boundary: with the automatic tolerance the
+            // sliver is kept (and needs many triangles), with 1 cm it is merged.
+            var quality = new QualityOptions { MinimumAngle = 20, SteinerPoints = 50000 };
+
+            var automatic = MeshAssert.Terminates(() => ParcelWithBuilding(0.005).Triangulate(new ConstraintOptions(), quality), LongTimeout);
+            var snapped = MeshAssert.Terminates(() => ParcelWithBuilding(0.005).Triangulate(new ConstraintOptions { SnapTolerance = 0.01 }, quality), LongTimeout);
+
+            MeshAssert.IsValid(automatic);
+            MeshAssert.IsValid(snapped);
+            MeshAssert.HasArea(automatic, 600, 1e-9);
+
+            // Snapping routes the parcel boundary through the building corners, i.e. geometry
+            // changes by at most the tolerance (area change <= perimeter * tolerance).
+            MeshAssert.HasArea(snapped, 600, 100 * 0.01 / 600);
+
+            Assert.That(snapped.Triangles.Count, Is.LessThan(automatic.Triangles.Count / 4));
+        }
+
+        [Test]
+        public void SnapToleranceKeepsLargerGaps()
+        {
+            // A gap larger than the snap tolerance is kept.
+            var mesh = ParcelWithBuilding(0.05).Triangulate(new ConstraintOptions { SnapTolerance = 0.01 });
+
+            MeshAssert.IsValid(mesh);
+            Assert.That(mesh.Vertices.Count(v => v.Y == 5710000 + 0.05), Is.EqualTo(2));
+        }
+        [Test]
+        [Description("Fixed: three vertices just over the snap tolerance apart (each within the tolerance of the segment between the other two) made snapping go back and forth forever.")]
+        public void SnapCycle()
+        {
+            // Configuration found in ALKIS data (Herne) with a snap tolerance of 1 cm:
+            // C is within 1 cm of A-B, and after splitting A-B at C, B is within 1 cm of A-C.
+            var a = new Vertex(0, 0);
+            var b = new Vertex(0.010, 0.019);
+            var c = new Vertex(0, 0.020);
+
+            var poly = new Polygon();
+            poly.Add(TestData.Square(-1, -1, 2));
+            poly.Add(a);
+            poly.Add(b);
+            poly.Add(c);
+            poly.Add(new Segment(a, b));
+            poly.Add(new Segment(a, c));
+
+            var mesh = MeshAssert.Terminates(() => poly.Triangulate(new ConstraintOptions { SnapTolerance = 0.01 }), LongTimeout);
+
+            MeshAssert.IsValid(mesh);
+            MeshAssert.HasArea(mesh, 4, 1e-9);
+        }
     }
 }

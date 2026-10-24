@@ -117,7 +117,7 @@ namespace TriangleNet.Meshing
             if (options?.ResolveIntersections ?? true)
             {
                 // Split intersecting segments in advance.
-                polygon = SegmentNoder.Node(polygon, config.Predicates());
+                polygon = SegmentNoder.Node(polygon, config.Predicates(), minTolerance: options?.SnapTolerance ?? 0.0);
             }
 
             var mesh = (Mesh)triangulator.Triangulate(polygon.Points, config);

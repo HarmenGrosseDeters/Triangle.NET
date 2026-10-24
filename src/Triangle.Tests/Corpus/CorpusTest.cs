@@ -25,6 +25,7 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_NRW_DGM      DGM1 xyz(.gz) tile from https://www.opengeodata.nrw.de (dgm1_xyz)
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
+    ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
     ///
     /// Run: dotnet test --filter TestCategory=Corpus
     /// </remarks>
@@ -110,7 +111,9 @@ namespace TriangleNet.Tests.Corpus
             var c = CorpusCase.Load(args[1]);
             double minAngle = double.Parse(args[2], CultureInfo.InvariantCulture);
 
-            Console.WriteLine("RESULT " + CorpusCheck.Run(c, minAngle, SteinerPoints));
+            double snap = args.Length > 3 ? double.Parse(args[3], CultureInfo.InvariantCulture) : SnapTolerance();
+
+            Console.WriteLine("RESULT " + CorpusCheck.Run(c, minAngle, SteinerPoints, snap));
 
             return 0;
         }
@@ -165,6 +168,9 @@ namespace TriangleNet.Tests.Corpus
 
             Assert.That(failures, Is.Empty, string.Join("\n", failures.Take(50).Select(f => $"{f.Name} (min angle {f.MinAngle}): {f.Result}")));
         }
+
+        private static double SnapTolerance() =>
+            double.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_SNAP"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0.0;
 
         private static double TileSize() =>
             double.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_TILE"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 200.0;

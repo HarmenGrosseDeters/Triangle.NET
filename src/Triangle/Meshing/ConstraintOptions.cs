@@ -48,6 +48,19 @@ namespace TriangleNet.Meshing
         public bool ResolveIntersections { get; set; } = true;
 
         /// <summary>
+        /// Gets or sets the minimum absolute snap tolerance used to resolve intersections
+        /// (default = 0, automatic: about 1e-12 times the coordinate magnitude).
+        /// </summary>
+        /// <remarks>
+        /// Vertices closer than the tolerance are merged, vertices closer than the tolerance to
+        /// a segment are inserted into the segment. Set this to the precision of the input data
+        /// (e.g. 0.01 for coordinates in meters with centimeter accuracy) to remove slivers
+        /// between nearly coincident boundaries, which otherwise lead to huge numbers of
+        /// triangles when refining with a minimum angle.
+        /// </remarks>
+        public double SnapTolerance { get; set; }
+
+        /// <summary>
         /// Gets or sets a filter deciding whether a segment may be split during mesh
         /// refinement (in addition to <see cref="SegmentSplitting"/>). If null (default),
         /// all segments may be split.

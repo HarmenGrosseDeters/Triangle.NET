@@ -15,7 +15,7 @@ namespace TriangleNet.Tests.Corpus
         /// <summary>
         /// Returns "OK ..." or a description of the failure.
         /// </summary>
-        public static string Run(CorpusCase c, double minAngle, int steinerPoints)
+        public static string Run(CorpusCase c, double minAngle, int steinerPoints, double snapTolerance = 0.0)
         {
             var poly = new Polygon();
             var map = new Dictionary<(double, double), Vertex>();
@@ -70,7 +70,11 @@ namespace TriangleNet.Tests.Corpus
             try
             {
                 var quality = minAngle > 0 ? new QualityOptions { MinimumAngle = minAngle, SteinerPoints = steinerPoints } : null;
-                mesh = (Mesh)poly.Triangulate(new ConstraintOptions(), quality);
+                mesh = (Mesh)poly.Triangulate(new ConstraintOptions { SnapTolerance = snapTolerance }, quality);
+            }
+            catch (ArgumentException) when (poly.Points.Any(p => !IsFinite(p.X) || !IsFinite(p.Y)))
+            {
+                return "SKIPPED (non-finite input rejected)";
             }
             catch (Exception e)
             {
@@ -102,7 +106,7 @@ namespace TriangleNet.Tests.Corpus
             }
 
             // Every input segment must be covered by mesh subsegments (within the snap tolerance).
-            SegmentNoder.Node(poly, predicates, out double noderTolerance);
+            SegmentNoder.Node(poly, predicates, out double noderTolerance, minTolerance: snapTolerance);
             double tol = Math.Max(scale * 1e-11, 4 * noderTolerance);
 
             var subsegs = mesh.Segments.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList();
@@ -130,7 +134,10 @@ namespace TriangleNet.Tests.Corpus
                 double ta = ((a.X - p0.X) * dx + (a.Y - p0.Y) * dy) / len;
                 double tb = ((b.X - p0.X) * dx + (b.Y - p0.Y) * dy) / len;
 
-                intervals.Add((Math.Max(0, Math.Min(ta, tb)), Math.Min(len, Math.Max(ta, tb))));
+                double s = Math.Max(0, Math.Min(ta, tb)), e = Math.Min(len, Math.Max(ta, tb));
+
+                // Subsegments beyond an endpoint (within tolerance) don't cover anything.
+                if (e > s) intervals.Add((s, e));
             }
 
             intervals.Sort();
@@ -146,6 +153,8 @@ namespace TriangleNet.Tests.Corpus
 
             return Math.Abs(covered - len) <= tol * 10 + len * 1e-9;
         }
+
+        private static bool IsFinite(double x) => !double.IsNaN(x) && !double.IsInfinity(x);
 
         private static double DistanceToSegment(Point v, Point p, Point q)
         {
