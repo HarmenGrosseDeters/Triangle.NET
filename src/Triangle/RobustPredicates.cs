@@ -431,18 +431,22 @@ namespace TriangleNet
             int eindex, findex, hindex;
             double enow, fnow;
 
+            // NOTE: the original C code reads one element past the end of an expansion
+            //       after it has been consumed (the value is never used). Guard those reads
+            //       to avoid IndexOutOfRangeException.
+
             enow = e[0];
             fnow = f[0];
             eindex = findex = 0;
             if ((fnow > enow) == (fnow > -enow))
             {
                 Q = enow;
-                enow = e[++eindex];
+                if (++eindex < elen) enow = e[eindex];
             }
             else
             {
                 Q = fnow;
-                fnow = f[++findex];
+                if (++findex < flen) fnow = f[findex];
             }
             hindex = 0;
             if ((eindex < elen) && (findex < flen))
@@ -450,12 +454,12 @@ namespace TriangleNet
                 if ((fnow > enow) == (fnow > -enow))
                 {
                     Qnew = (double)(enow + Q); bvirt = Qnew - enow; hh = Q - bvirt;
-                    enow = e[++eindex];
+                    if (++eindex < elen) enow = e[eindex];
                 }
                 else
                 {
                     Qnew = (double)(fnow + Q); bvirt = Qnew - fnow; hh = Q - bvirt;
-                    fnow = f[++findex];
+                    if (++findex < flen) fnow = f[findex];
                 }
                 Q = Qnew;
                 if (hh != 0.0)
@@ -473,7 +477,7 @@ namespace TriangleNet
                         around = Q - avirt;
                         hh = around + bround;
 
-                        enow = e[++eindex];
+                        if (++eindex < elen) enow = e[eindex];
                     }
                     else
                     {
@@ -484,7 +488,7 @@ namespace TriangleNet
                         around = Q - avirt;
                         hh = around + bround;
 
-                        fnow = f[++findex];
+                        if (++findex < flen) fnow = f[findex];
                     }
                     Q = Qnew;
                     if (hh != 0.0)
@@ -502,7 +506,7 @@ namespace TriangleNet
                 around = Q - avirt;
                 hh = around + bround;
 
-                enow = e[++eindex];
+                if (++eindex < elen) enow = e[eindex];
                 Q = Qnew;
                 if (hh != 0.0)
                 {
@@ -518,7 +522,7 @@ namespace TriangleNet
                 around = Q - avirt;
                 hh = around + bround;
 
-                fnow = f[++findex];
+                if (++findex < flen) fnow = f[findex];
                 Q = Qnew;
                 if (hh != 0.0)
                 {

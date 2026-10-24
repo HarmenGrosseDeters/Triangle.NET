@@ -663,9 +663,9 @@ namespace TriangleNet
                                 horiz.Sym(ref testtri);
                                 enq = testtri.tri.id != DUMMY;
                             }
-                            if (enq && (behavior.CanSplitSegment != null))
+                            if (enq && (qualityMesher != null))
                             {
-                                enq = behavior.CanSplitSegment(brokensubseg.seg);
+                                enq = qualityMesher.CanSplit(brokensubseg.seg);
                             }
                             if (enq)
                             {

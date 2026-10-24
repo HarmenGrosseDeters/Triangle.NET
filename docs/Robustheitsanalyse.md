@@ -159,7 +159,7 @@ paralleles Vermaschen mit eigenen Prädikaten.
 
 | # | Fix | Datei |
 |---|-----|-------|
-| 1–3 | **Noding mit Snapping** vor dem Einfügen der Segmente (`ConstraintOptions.ResolveIntersections`, Standard an): alle Schnittpunkte werden vorab berechnet (exakte Kreuzungserkennung), neue Punkte näher als r ≈ 1e-12 · Ausdehnung an einem bestehenden Punkt werden mit ihm verschmolzen, und Punkte näher als r an einem Segment werden ins Segment eingebunden. Eingabepunkte werden nie verschoben. Das Verfahren terminiert nachweisbar, weil neue Punkte einen Mindestabstand haben. | `Meshing/SegmentNoder.cs` |
+| 1–3 | **Noding mit Snapping** vor dem Einfügen der Segmente (`ConstraintOptions.ResolveIntersections`, Standard an). Toleranz r ≈ 1e-12 × Koordinatengröße (bei UTM ≈ 5 µm). Punkte näher als r zueinander werden verschmolzen (exakte Duplikate bleiben erhalten). Alle Schnittpunkte werden vorab berechnet (exakte Kreuzungserkennung) und mit Punkten in Reichweite r zusammengefasst. Punkte näher als r an einem Segment werden ins Segment eingebunden. Konvergiert das nicht (z. B. viele fast deckungsgleiche Kanten), wird die Toleranz in Stufen bis 2,3e-10 × Koordinatengröße (UTM ≈ 1,4 mm) erhöht, wie beim Snapping-Noder von GEOS. Danach gibt es eine klare `InvalidOperationException`, keinen Hänger. | `Meshing/SegmentNoder.cs` |
 | 1–3 | **Sicherheitsnetz:** `ScoutSegment`/`ConstrainedEdge` als Schleife statt Rekursion (kein StackOverflow), Schrittzähler gegen Endlosschleifen, Orientierungsprüfung nach dem Einfügen von Schnittpunkten. Ungültige Netze werden damit nie still zurückgegeben. | `Meshing/ConstraintMesher.cs` |
 | 4 | Arbeits-Arrays der exakten Arithmetik thread-lokal; jede `RobustPredicates`-Instanz ist jetzt thread-sicher. | `RobustPredicates.cs` |
 | 5, 11 | Identische Punkte: leeres Netz statt StackOverflow (Dwyer) bzw. Exception (SweepLine). | `Dwyer.cs`, `SweepLine.cs` |
@@ -169,6 +169,8 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | 10 | SweepLine: abschließender Flip-Durchlauf mit exakten Prädikaten. | `SweepLine.cs` |
 | neu | **aCute-Verfeinerung** (seit 2022 Standard) startete die Punktsuche an einer Kante, links von der der neue Punkt nicht liegt → Punkt im falschen Dreieck, invertierte Dreiecke. Jetzt wird die Startkante per Orientierungstest gewählt. | `Meshing/QualityMesher.cs` |
 | neu | aCute-Ort fällt auf einen bestehenden Punkt → Rückfall auf den Umkreismittelpunkt statt Exception. | `Meshing/QualityMesher.cs` |
+| neu | **Präzisionsgrenze bei der Verfeinerung:** Würde das Teilen eines Segments (mit exakter Prüfung) ein flaches/invertiertes Dreieck erzeugen oder fällt der Teilungspunkt auf einen Endpunkt, wird das Teilsegment nicht geteilt und für den Rest der Verfeinerung gesperrt (statt still invertierter Dreiecke bzw. „Ran out of precision“). Zu kleine Dreiecke bleiben stehen (statt „new vertex at circumcenter“). Abschließende Orientierungsprüfung → laute Exception statt ungültigem Netz. | `Meshing/QualityMesher.cs` |
+| neu | `FastExpansionSumZeroElim` las (wie das C-Original) ein Element hinter dem Ende einer Expansion; in C# eine `IndexOutOfRangeException`, ausgelöst durch unendliche Koordinaten. | `RobustPredicates.cs` |
 
 **Ergebnis (Fuzzing, jeder Fall in eigenem Prozess):**
 
@@ -182,8 +184,46 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | 200 Segmente auf 50er-Raster, 20° | – | 50/50 |
 | Nachbarflächen mit Abweichung 1e-12, 25°, **ohne** Steiner-Limit | terminiert nicht | ~30 ms |
 
-Die Testsuite hat jetzt 203 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
+Die Testsuite hat jetzt 234 Tests, alle grün. Die früheren `KnownBug`-Tests sind reguläre
 Regressionstests geworden.
+
+### Externer Korpus: GEOS-Robustheitstests
+
+Die XML-Testsuite von GEOS (`tests/xmltester/tests`) enthält 2156 Fälle, an denen Overlay/Noding
+in JTS, GEOS, PostGIS, QGIS oder Shapely gescheitert ist (OSM-Wasserflächen, Isochronen,
+Mikropolygone mit Koordinatenrauschen, fast deckungsgleiche Kanten, Nadeldreiecke). Jeder Fall
+wurde als PSLG trianguliert (alle Kanten von A und B plus Rahmen), ohne und mit 20°
+Mindestwinkel, jeweils in eigenem Prozess:
+
+| Stand | ohne Qualität | 20° |
+|-------|---------------|-----|
+| nach den ersten Fixes | 2142 gültig, 7 Abstürze/Exceptions, 3 Hänger | 2105 gültig, 31 Exceptions, **2 still inkonsistent**, 5 Hänger |
+| jetzt | **2152 gültig** | **2151 gültig**, 1 langsam (> 60 s) |
+
+Die verbleibenden 4 Fälle je Spalte enthalten absichtlich NaN/Inf und werden korrekt mit
+`ArgumentException` abgewiesen. Der langsame Fall (extrem lange Nadeldreiecke, 10⁶ : 1) ist
+gültig, braucht aber ~70 s. Der Original-Stand ist dort 30× schneller, liefert aber bis zu 18.000
+invertierte Dreiecke. Bei normalen Daten liegt der Mehraufwand der Fixes bei 0–25 %.
+
+Der Korpuslauf ist Teil der Testsuite (Kategorie `Corpus`, explizit), ebenso Läufe mit
+**ALKIS-Flurstücken** und **DGM1** aus NRW:
+
+```
+# GEOS: git clone --depth 1 --filter=blob:none --sparse https://github.com/libgeos/geos
+#       git -C geos sparse-checkout set tests/xmltester/tests
+export TRIANGLE_GEOS_TESTS=/pfad/geos/tests/xmltester/tests
+# NRW (Open Data, DL-DE Zero 2.0): Flurstücke als GeoJSON (UTM32), DGM1 als xyz(.gz)
+export TRIANGLE_NRW_ALKIS=/pfad/flurstuecke.geojson
+export TRIANGLE_NRW_DGM=/pfad/dgm1_32_xxx_yyyy_1_nw.xyz.gz
+export TRIANGLE_CORPUS_TILES=200   # Anzahl Kacheln (Standard 200)
+export TRIANGLE_CORPUS_TILE=200    # Kachelgröße in m (Standard 200)
+dotnet test src/Triangle.Tests --filter TestCategory=Corpus
+```
+
+Die NRW-Läufe zerlegen die Flurstücke in Kacheln (vollständige Flurstücke inklusive ihrer
+Nachbarn, also mit doppelt digitalisierten gemeinsamen Grenzen) bzw. kombinieren ein 1-m-Raster
+des DGM1 mit den Flurstücksgrenzen als Bruchkanten. In dieser Entwicklungsumgebung waren die
+NRW-Portale nicht erreichbar; geprüft wurde der Ablauf mit synthetischen Daten im gleichen Format.
 
 ## Die Testsuite (`src/Triangle.Tests/Robustness`)
 

@@ -14,6 +14,11 @@ namespace TriangleNet.Tests
     {
         public static int Main(string[] args)
         {
+            if (args.Length > 0 && args[0] == "corpus-case")
+            {
+                return Corpus.CorpusTest.RunCase(args);
+            }
+
             return IsolatedProcess.RunScenario(args);
         }
     }

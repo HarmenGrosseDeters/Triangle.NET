@@ -8,6 +8,7 @@ namespace TriangleNet.Meshing
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -21,7 +22,8 @@ namespace TriangleNet.Meshing
     /// The noder computes all intersections in advance and splits the segments, so the mesher
     /// never sees crossing segments. Crossings are detected using exact predicates.
     ///
-    /// Additionally, vertices closer than a small tolerance to a segment are snapped onto the
+    /// Vertices closer than a small tolerance to each other are merged (the first one is kept).
+    /// Additionally, vertices closer than the tolerance to a segment are snapped onto the
     /// segment (the segment is split at the vertex, the vertex isn't moved). Otherwise, vertices
     /// lying almost on a segment (like rounded intersection points) produce nearly degenerate
     /// triangles, which can be inverted by subsequent refinement (inserting rounded segment
@@ -39,30 +41,107 @@ namespace TriangleNet.Meshing
         public const double DefaultRelativeTolerance = 1.0 / (1L << 40);
 
         /// <summary>
+        /// Largest relative snap tolerance used if noding doesn't converge (about 2.3e-10,
+        /// i.e. 1.4 mm for UTM coordinates).
+        /// </summary>
+        public const double MaxRelativeTolerance = 1.0 / (1L << 32);
+
+        /// <summary>
         /// Split all segments of the polygon at their intersections and at vertices lying
         /// (almost) on the segments.
         /// </summary>
         /// <param name="polygon">The input polygon (won't be modified).</param>
         /// <param name="predicates">The predicates used to detect crossings.</param>
-        /// <param name="maxIterations">Maximum number of noding iterations.</param>
+        /// <param name="maxIterations">Maximum number of noding iterations per tolerance.</param>
         /// <returns>The input polygon, if nothing had to be changed, otherwise a new polygon.</returns>
-        public static IPolygon Node(IPolygon polygon, IPredicates predicates, int maxIterations = 50)
+        public static IPolygon Node(IPolygon polygon, IPredicates predicates, int maxIterations = 10)
         {
-            if (polygon.Segments.Count == 0)
+            return Node(polygon, predicates, out _, maxIterations);
+        }
+
+        /// <summary>
+        /// Split all segments of the polygon at their intersections and at vertices lying
+        /// (almost) on the segments.
+        /// </summary>
+        /// <param name="polygon">The input polygon (won't be modified).</param>
+        /// <param name="predicates">The predicates used to detect crossings.</param>
+        /// <param name="tolerance">The absolute snap tolerance used.</param>
+        /// <param name="maxIterations">Maximum number of noding iterations per tolerance.</param>
+        /// <returns>The input polygon, if nothing had to be changed, otherwise a new polygon.</returns>
+        /// <remarks>
+        /// If noding doesn't converge (e.g. for many nearly coincident segments, where rounded
+        /// intersection points keep creating new intersections), it is repeated with a larger
+        /// tolerance (up to <see cref="MaxRelativeTolerance"/>), like the snapping noder of GEOS.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Noding doesn't converge.</exception>
+        public static IPolygon Node(IPolygon polygon, IPredicates predicates, out double tolerance, int maxIterations = 10)
+        {
+            tolerance = 0.0;
+
+            if (polygon.Segments.Count == 0 || !polygon.Points.All(IsFinite))
             {
+                // Nothing to do, or invalid input (rejected by input validation later).
                 return polygon;
             }
 
-            var segments = new List<ISegment>(polygon.Segments);
+            double scale = GetScale(polygon);
+
+            // Limit for the number of new vertices (to detect non-convergence early).
+            int maxNewPoints = 50 * (polygon.Points.Count + polygon.Segments.Count) + 1000;
+
+            for (double relative = DefaultRelativeTolerance; relative <= MaxRelativeTolerance; relative *= 16)
+            {
+                tolerance = relative * scale;
+
+                if (TryNode(polygon, predicates, tolerance, maxIterations, maxNewPoints, out var result))
+                {
+                    return result;
+                }
+            }
+
+            throw new InvalidOperationException("Segment noding doesn't converge (too many nearly coincident segments). " +
+                "Consider cleaning the input (e.g. snapping it to a grid).");
+        }
+
+        private static bool TryNode(IPolygon polygon, IPredicates predicates, double tolerance,
+            int maxIterations, int maxNewPoints, out IPolygon result)
+        {
+            result = polygon;
+
             var newPoints = new List<Vertex>();
 
-            double tolerance = GetTolerance(polygon);
+            // Merge vertices closer than the tolerance. Afterwards, all vertices have a minimum
+            // distance, which is required for the noding to terminate.
+            var vertices = new VertexIndex(tolerance);
+            var merged = MergeVertices(polygon.Points, vertices);
 
-            var vertices = new VertexIndex(polygon.Points, tolerance);
+            var segments = new List<ISegment>(polygon.Segments.Count);
 
-            bool changed = false;
+            foreach (var s in polygon.Segments)
+            {
+                var a = s.GetVertex(0);
+                var b = s.GetVertex(1);
 
-            for (int iteration = 0; iteration < maxIterations; iteration++)
+                if (!merged.TryGetValue(a, out var ma) & !merged.TryGetValue(b, out var mb))
+                {
+                    segments.Add(s);
+                    continue;
+                }
+
+                ma = ma ?? a;
+                mb = mb ?? b;
+
+                // Segments shorter than the tolerance vanish.
+                if (!SameLocation(ma, mb))
+                {
+                    segments.Add(new Segment(ma, mb, s.Label));
+                }
+            }
+
+            bool changed = merged.Count > 0;
+            bool converged = false;
+
+            for (int iteration = 0; iteration < maxIterations && newPoints.Count <= maxNewPoints; iteration++)
             {
                 var splits = new Dictionary<int, List<(double, Vertex)>>();
 
@@ -75,6 +154,7 @@ namespace TriangleNet.Meshing
 
                 if (splits.Count == 0)
                 {
+                    converged = true;
                     break;
                 }
 
@@ -82,27 +162,58 @@ namespace TriangleNet.Meshing
                 changed = true;
             }
 
-            if (!changed)
+            if (!converged)
             {
-                return polygon;
+                return false;
             }
 
-            var result = new Polygon(polygon.Points.Count + newPoints.Count)
+            if (changed)
             {
-                HasPointMarkers = polygon.HasPointMarkers,
-                HasSegmentMarkers = polygon.HasSegmentMarkers
-            };
+                var noded = new Polygon(polygon.Points.Count + newPoints.Count)
+                {
+                    HasPointMarkers = polygon.HasPointMarkers,
+                    HasSegmentMarkers = polygon.HasSegmentMarkers
+                };
 
-            result.Points.AddRange(polygon.Points);
-            result.Points.AddRange(newPoints);
-            result.Segments.AddRange(segments);
-            result.Holes.AddRange(polygon.Holes);
-            result.Regions.AddRange(polygon.Regions);
+                noded.Points.AddRange(polygon.Points.Where(p => !merged.ContainsKey(p)));
+                noded.Points.AddRange(newPoints);
+                noded.Segments.AddRange(segments);
+                noded.Holes.AddRange(polygon.Holes);
+                noded.Regions.AddRange(polygon.Regions);
 
-            return result;
+                result = noded;
+            }
+
+            return true;
         }
 
-        private static double GetTolerance(IPolygon polygon)
+        /// <summary>
+        /// Add the vertices to the index. Vertices closer than the tolerance to a vertex
+        /// already in the index are mapped to that vertex.
+        /// </summary>
+        private static Dictionary<Vertex, Vertex> MergeVertices(IEnumerable<Vertex> points, VertexIndex index)
+        {
+            var merged = new Dictionary<Vertex, Vertex>(new ReferenceComparer());
+
+            foreach (var v in points)
+            {
+                var target = index.Find(v.x, v.y);
+
+                if (target == null)
+                {
+                    index.Add(v);
+                }
+                else if (!SameLocation(target, v))
+                {
+                    // Exact duplicates are kept (handled by the triangulator).
+                    merged[v] = target;
+                }
+            }
+
+            return merged;
+        }
+
+        private static double GetScale(IPolygon polygon)
         {
             var bounds = new Rectangle();
             double max = 0.0;
@@ -113,7 +224,7 @@ namespace TriangleNet.Meshing
                 max = Math.Max(max, Math.Max(Math.Abs(v.x), Math.Abs(v.y)));
             }
 
-            return DefaultRelativeTolerance * Math.Max(max, Math.Max(bounds.Width, bounds.Height));
+            return Math.Max(max, Math.Max(bounds.Width, bounds.Height));
         }
 
         /// <summary>
@@ -258,6 +369,14 @@ namespace TriangleNet.Meshing
                         continue;
                     }
 
+                    // Vertices within the tolerance of an endpoint are practically coincident
+                    // with it. Snapping them would create micro segments, and for clusters of
+                    // such vertices (e.g. tiny rings), splitting could go on forever.
+                    if (Distance(v, a) <= tolerance || Distance(v, b) <= tolerance)
+                    {
+                        continue;
+                    }
+
                     // Distance to the line and parameter along the segment.
                     double distance = Math.Abs(dx * (v.y - a.y) - dy * (v.x - a.x)) / length;
                     double t = ((v.x - a.x) * dx + (v.y - a.y) * dy) / (length * length);
@@ -273,6 +392,26 @@ namespace TriangleNet.Meshing
         private static List<ISegment> Split(List<ISegment> segments, Dictionary<int, List<(double, Vertex)>> splits)
         {
             var result = new List<ISegment>(segments.Count + 2 * splits.Count);
+
+            // Endpoints (unordered) of all segments which are kept unchanged and of all new
+            // segments, used to avoid duplicate new segments.
+            var existing = new HashSet<(Vertex, Vertex)>(new EdgeComparer());
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                if (!splits.ContainsKey(i))
+                {
+                    existing.Add((segments[i].GetVertex(0), segments[i].GetVertex(1)));
+                }
+            }
+
+            void AddNew(Vertex a, Vertex b, int label)
+            {
+                if (existing.Add((a, b)))
+                {
+                    result.Add(new Segment(a, b, label));
+                }
+            }
 
             for (int i = 0; i < segments.Count; i++)
             {
@@ -299,14 +438,14 @@ namespace TriangleNet.Meshing
 
                     if (!SameLocation(prev, v))
                     {
-                        result.Add(new Segment(prev, v, s.Label));
+                        AddNew(prev, v, s.Label);
                         prev = v;
                     }
                 }
 
                 if (!SameLocation(prev, last))
                 {
-                    result.Add(new Segment(prev, last, s.Label));
+                    AddNew(prev, last, s.Label);
                 }
             }
 
@@ -353,6 +492,47 @@ namespace TriangleNet.Meshing
             return a.x == b.x && a.y == b.y;
         }
 
+        private static bool IsFinite(Vertex v)
+        {
+            return !double.IsNaN(v.x) && !double.IsInfinity(v.x) && !double.IsNaN(v.y) && !double.IsInfinity(v.y);
+        }
+
+        private static double Distance(Vertex a, Vertex b)
+        {
+            double dx = a.x - b.x, dy = a.y - b.y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private class ReferenceComparer : IEqualityComparer<Vertex>
+        {
+            public bool Equals(Vertex a, Vertex b) => ReferenceEquals(a, b);
+
+            public int GetHashCode(Vertex v) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(v);
+        }
+
+        /// <summary>
+        /// Compares edges by their endpoint locations (ignoring direction).
+        /// </summary>
+        private class EdgeComparer : IEqualityComparer<(Vertex, Vertex)>
+        {
+            public bool Equals((Vertex, Vertex) e, (Vertex, Vertex) f)
+            {
+                return (SameLocation(e.Item1, f.Item1) && SameLocation(e.Item2, f.Item2)) ||
+                       (SameLocation(e.Item1, f.Item2) && SameLocation(e.Item2, f.Item1));
+            }
+
+            public int GetHashCode((Vertex, Vertex) e)
+            {
+                // Symmetric in the two endpoints.
+                return Hash(e.Item1) ^ Hash(e.Item2);
+            }
+
+            private static int Hash(Vertex v)
+            {
+                return v.x.GetHashCode() * 31 + v.y.GetHashCode();
+            }
+        }
+
         /// <summary>
         /// Spatial hash to find a vertex within the given tolerance.
         /// </summary>
@@ -363,19 +543,10 @@ namespace TriangleNet.Meshing
 
             public List<Vertex> All { get; } = new List<Vertex>();
 
-            public VertexIndex(IEnumerable<Vertex> vertices, double tolerance)
+            public VertexIndex(double tolerance)
             {
                 this.tolerance = tolerance;
                 this.size = tolerance > 0.0 ? tolerance : 1.0;
-
-                // Input vertices are never merged (only exact duplicates are skipped).
-                foreach (var v in vertices)
-                {
-                    if (!ContainsExact(v))
-                    {
-                        Add(v);
-                    }
-                }
             }
 
             public void Add(Vertex v)
@@ -426,11 +597,6 @@ namespace TriangleNet.Meshing
                 }
 
                 return result;
-            }
-
-            private bool ContainsExact(Vertex v)
-            {
-                return cells.TryGetValue(Key(v.x, v.y), out var list) && list.Exists(p => SameLocation(p, v));
             }
 
             private (long, long) Key(double x, double y)

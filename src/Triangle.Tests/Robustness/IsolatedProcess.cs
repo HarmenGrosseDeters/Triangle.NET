@@ -43,6 +43,14 @@ namespace TriangleNet.Tests.Robustness
 
         public static (bool TimedOut, int ExitCode, string Output) Run(string scenario, TimeSpan timeout)
         {
+            return Run(new[] { scenario }, timeout);
+        }
+
+        /// <summary>
+        /// Run the test assembly in a child process with the given arguments (see <see cref="Program"/>).
+        /// </summary>
+        public static (bool TimedOut, int ExitCode, string Output) Run(string[] arguments, TimeSpan timeout)
+        {
             var assembly = typeof(IsolatedProcess).Assembly.Location;
             var host = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
 
@@ -54,7 +62,11 @@ namespace TriangleNet.Tests.Robustness
             };
 
             psi.ArgumentList.Add(assembly);
-            psi.ArgumentList.Add(scenario);
+
+            foreach (var argument in arguments)
+            {
+                psi.ArgumentList.Add(argument);
+            }
 
             var output = new StringBuilder();
 

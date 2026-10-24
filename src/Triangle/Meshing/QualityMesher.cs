@@ -28,6 +28,9 @@ namespace TriangleNet.Meshing
 
         NewLocation newLocation;
 
+        // Subsegments which can't be split due to the limited precision of floating point arithmetic.
+        HashSet<SubSegment> unsplittable = new HashSet<SubSegment>();
+
         Log logger = Log.Instance;
 
         // Stores the vertices of the triangle that contains newvertex
@@ -208,7 +211,7 @@ namespace TriangleNet.Meshing
             }
 
             if (encroached > 0 && (behavior.NoBisect == 0 || ((behavior.NoBisect == 1) && (sides == 2))) &&
-                (behavior.CanSplitSegment == null || behavior.CanSplitSegment(testsubseg.seg)))
+                CanSplit(testsubseg.seg))
             {
                 // Add the subsegment to the list of encroached subsegments.
                 // Be sure to get the orientation right.
@@ -657,17 +660,23 @@ namespace TriangleNet.Meshing
                         }
                     }
 
-                    // Check whether the new vertex lies on an endpoint.
+                    // Check whether the new vertex lies on an endpoint, or whether inserting it
+                    // would create flat or inverted triangles. In both cases, the segment is too
+                    // small to be split with the finite precision of floating point arithmetic.
                     if (((newvertex.x == eorg.x) && (newvertex.y == eorg.y)) ||
-                        ((newvertex.x == edest.x) && (newvertex.y == edest.y)))
+                        ((newvertex.x == edest.x) && (newvertex.y == edest.y)) ||
+                        !IsValidSplit(ref enctri, newvertex))
                     {
+                        if (Log.Verbose)
+                        {
+                            logger.Warning("Ran out of precision: segment can't be split.", "Quality.SplitEncSegs()");
+                        }
 
-                        logger.Error("Ran out of precision: I attempted to split a"
-                            + " segment to a smaller size than can be accommodated by"
-                            + " the finite precision of floating point arithmetic.",
-                            "Quality.SplitEncSegs()");
-
-                        throw new Exception("Ran out of precision");
+                        // Don't split this subsegment (quality may be compromised near it).
+                        mesh.vertices.Remove(newvertex.hash);
+                        unsplittable.Add(currentenc.seg);
+                        seg.org = null;
+                        continue;
                     }
                     // Insert the splitting vertex.  This should always succeed.
                     success = mesh.InsertVertex(newvertex, ref enctri, ref currentenc, true, triflaws);
@@ -860,12 +869,76 @@ namespace TriangleNet.Meshing
 
                 if (errorflag)
                 {
-                    logger.Error("The new vertex is at the circumcenter of triangle: This probably "
-                        + "means that I am trying to refine triangles to a smaller size than can be "
-                        + "accommodated by the finite precision of floating point arithmetic.",
-                        "Quality.SplitTriangle()");
+                    // The triangle is too small to be refined with the finite precision of
+                    // floating point arithmetic. Leave it as it is (it remains a bad triangle).
+                    if (Log.Verbose)
+                    {
+                        logger.Warning("The new vertex is at the circumcenter of triangle: triangle can't be refined.",
+                            "Quality.SplitTriangle()");
+                    }
+                }
+            }
+        }
 
-                    throw new Exception("The new vertex is at the circumcenter of triangle.");
+        /// <summary>
+        /// Returns true, if the given subsegment may be split.
+        /// </summary>
+        internal bool CanSplit(SubSegment seg)
+        {
+            return !unsplittable.Contains(seg) &&
+                (behavior.CanSplitSegment == null || behavior.CanSplitSegment(seg));
+        }
+
+        /// <summary>
+        /// Check whether inserting the vertex on the edge of the given triangle creates
+        /// only positively oriented triangles (using exact predicates).
+        /// </summary>
+        private bool IsValidSplit(ref Otri tri, Vertex v)
+        {
+            Otri sym = default(Otri);
+
+            var org = tri.Org();
+            var dest = tri.Dest();
+            var apex = tri.Apex();
+
+            if (predicates.CounterClockwise(org, v, apex) <= 0.0 ||
+                predicates.CounterClockwise(v, dest, apex) <= 0.0)
+            {
+                return false;
+            }
+
+            tri.Sym(ref sym);
+
+            if (sym.tri.id != Mesh.DUMMY)
+            {
+                apex = sym.Apex();
+
+                if (predicates.CounterClockwise(dest, v, apex) <= 0.0 ||
+                    predicates.CounterClockwise(v, org, apex) <= 0.0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Throw if refinement produced flat or inverted triangles.
+        /// </summary>
+        private void CheckOrientation()
+        {
+            Otri tri = default(Otri);
+
+            foreach (var t in mesh.triangles)
+            {
+                tri.tri = t;
+                tri.orient = 0;
+
+                if (predicates.CounterClockwise(tri.Org(), tri.Dest(), tri.Apex()) <= 0.0)
+                {
+                    logger.Error("Inverted triangle after mesh refinement.", "QualityMesher.CheckOrientation()");
+                    throw new Exception("Mesh refinement produced an invalid mesh.");
                 }
             }
         }
@@ -917,6 +990,8 @@ namespace TriangleNet.Meshing
             // At this point, if the "-D" switch was selected and we haven't run out
             // of Steiner points, the triangulation should be (conforming) Delaunay
             // and have no low-quality triangles.
+
+            CheckOrientation();
 
             // Might we have run out of Steiner points too soon?
             if (Log.Verbose && behavior.ConformingDelaunay && (badsubsegs.Count > 0) && (mesh.steinerleft == 0))
