@@ -168,11 +168,16 @@ namespace TriangleNet.Tests.Corpus
 
                 TestContext.Out.WriteLine($"  min angle {g.Key}: total {stats.Sum(r => r.Stats["ms"]) / 1000:F1} s, " +
                     $"{stats.Sum(r => r.Stats["triangles"])} triangles, Steiner limit reached x {stats.Count(r => r.Stats["limit"] > 0)}, " +
-                    $"cases with bad triangles x {stats.Count(r => r.Stats["bad"] > 0)}");
+                    $"bad triangles {stats.Sum(r => r.Stats["bad"])} ({100.0 * stats.Sum(r => r.Stats["bad"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %) in {stats.Count(r => r.Stats["bad"] > 0)} cases");
 
                 foreach (var r in stats.OrderByDescending(r => r.Stats["ms"]).Take(5))
                 {
                     TestContext.Out.WriteLine($"    slow: {r.Name} {r.Stats["ms"]} ms, {r.Stats["triangles"]} triangles, bad {r.Stats["bad"]}");
+                }
+
+                foreach (var r in stats.OrderByDescending(r => r.Stats["bad"]).Take(5))
+                {
+                    TestContext.Out.WriteLine($"    worst: {r.Name} bad {r.Stats["bad"]} of {r.Stats["triangles"]} triangles, {r.Stats["ms"]} ms");
                 }
             }
 

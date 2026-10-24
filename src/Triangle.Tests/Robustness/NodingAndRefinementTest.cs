@@ -181,14 +181,26 @@ namespace TriangleNet.Tests.Robustness
         }
 
         [Test]
-        public void StackedNearlyIdenticalSquaresBeyondTolerance()
+        [Description("Fixed: offsets larger than the maximum snap tolerance made noding fail (crossings merged into " +
+            "segment endpoints counted as splits and used up the iterations).")]
+        public void StackedNearlyIdenticalSquaresBeyondTolerance([Values(1e-6, 1e-5, 1e-4)] double offset)
         {
-            // Offsets larger than the maximum snap tolerance: noding can't converge in
-            // reasonable time, which must be reported (instead of running forever).
+            var poly = StackedSquares(offset);
+
+            var mesh = MeshAssert.Terminates(() => poly.Triangulate(), LongTimeout);
+
+            MeshAssert.IsValid(mesh);
+            MeshAssert.HasArea(mesh, 100, 1e-9);
+        }
+
+        [Test]
+        public void NodingThatDoesNotConvergeIsReported()
+        {
+            // If noding doesn't converge (here: only one iteration allowed), this must be
+            // reported instead of running forever or returning crossing segments.
             var poly = StackedSquares(1e-6);
 
-            var e = Assert.Throws<AggregateException>(() => MeshAssert.Terminates(() => poly.Triangulate(), LongTimeout));
-            Assert.That(e.InnerException, Is.InstanceOf<InvalidOperationException>());
+            Assert.Throws<InvalidOperationException>(() => SegmentNoder.Node(poly, new RobustPredicates(), maxIterations: 1));
         }
 
         [Test]
@@ -268,6 +280,48 @@ namespace TriangleNet.Tests.Robustness
 
             MeshAssert.IsValid(mesh);
             MeshAssert.HasArea(mesh, 4, 1e-9);
+        }
+
+        [Test]
+        [Description("Fixed: a crossing merged into a segment endpoint 'split' the segment at its endpoint and blocked snapping into it. " +
+            "The nearly collinear segments (0.0002°) remained and quality refinement spent 97,000 Steiner points in this wedge (ALKIS Herne).")]
+        public void CrossingAtEndpointDoesNotBlockSnapping()
+        {
+            // Land use boundary and building edge (ALKIS Herne), sharing S; B is 0.02 mm from S-A.
+            // The third segment passes S at about 1 mm and crosses both close to S.
+            var s = new Vertex(377985.407, 5710096.824);
+            var a = new Vertex(377981.985, 5710100.365);
+            var b = new Vertex(377982.302, 5710100.037);
+            var c = new Vertex(377983.573, 5710095.053);
+            var d = new Vertex(377997.164, 5710108.182);
+
+            var poly = new Polygon();
+            foreach (var v in new[] { s, a, b, c, d }) poly.Add(v);
+            poly.Add(new Segment(s, a));
+            poly.Add(new Segment(b, s));
+            poly.Add(new Segment(c, d));
+
+            var noded = SegmentNoder.Node(poly, new RobustPredicates(), minTolerance: 0.01);
+
+            // S-A is split at B, so S-B is shared and there is no tiny angle at S.
+            Assert.That(noded.Segments.Any(x => Connects(x, s, a)), Is.False);
+            Assert.That(noded.Segments.Any(x => Connects(x, b, a)), Is.True);
+
+            poly.Add(TestData.Square(377970, 5710085, 40));
+
+            var mesh = MeshAssert.Terminates(() => poly.Triangulate(new ConstraintOptions { SnapTolerance = 0.01 },
+                new QualityOptions { MinimumAngle = 20, SteinerPoints = 100000 }), LongTimeout);
+
+            MeshAssert.IsValid(mesh);
+            Assert.That(mesh.Vertices.Count, Is.LessThan(2000));
+        }
+
+        private static bool Connects(ISegment seg, Vertex p, Vertex q)
+        {
+            Point u = seg.GetVertex(0), v = seg.GetVertex(1);
+
+            return (u.X == p.X && u.Y == p.Y && v.X == q.X && v.Y == q.Y) ||
+                (u.X == q.X && u.Y == q.Y && v.X == p.X && v.Y == p.Y);
         }
     }
 }

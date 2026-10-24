@@ -357,8 +357,18 @@ namespace TriangleNet.Meshing
 
                 var v = GetOrCreateVertex(x, y, s.Label, vertices, newPoints);
 
-                AddSplit(splits, i, Parameter(a, b, v), v);
-                AddSplit(splits, j, Parameter(c, d, v), v);
+                // The intersection may be merged with an endpoint of a segment. That's no split
+                // of this segment (and it must not be retired: snapping a nearly collinear
+                // vertex into it would be blocked, leaving a tiny angle between the segments).
+                if (!SameLocation(v, a) && !SameLocation(v, b))
+                {
+                    AddSplit(splits, i, Parameter(a, b, v), v);
+                }
+
+                if (!SameLocation(v, c) && !SameLocation(v, d))
+                {
+                    AddSplit(splits, j, Parameter(c, d, v), v);
+                }
             }
         }
 
