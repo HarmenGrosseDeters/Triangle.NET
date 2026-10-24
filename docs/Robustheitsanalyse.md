@@ -383,7 +383,25 @@ mit bis zu 40 m Kantenlänge stehen. Jetzt wird der Punkt trotzdem eingefügt, w
 Kanten (die Raster-Untergrenze verhindert eine Kaskade). Damit sank der Anteil von 5,3 % / 6,0 %
 auf 2,2 % / 2,2 %; die Laufzeit stieg um etwa ein Drittel (15 % mehr Dreiecke).
 
-Die übrigen schlechten Dreiecke liegen an Segmenten im Bereich 2–5 cm und in echten
+Wo die übrigen schlechten Dreiecke liegen (alle 201 Kacheln, Raster 1 cm + Keil 3 cm; Korpus-Kennzahlen
+`ba`/`bf`/`bn`/`bs`/`bi`):
+
+| Klasse | 20° | 30° | vermeidbar? |
+|--------|-----|-----|-------------|
+| an einem kleinen Eingabewinkel (zwei Segmente < Mindestwinkel) | 4.892 | 6.517 | nein |
+| kürzeste Kante unter zwei Rasterzellen | 16.099 | 30.436 | nein (Raster) |
+| schmaler Streifen: anderes Segment näher als 5 cm | 39.124 | 89.070 | kaum (Raster) |
+| an einem Segment, sonst nichts in der Nähe | 5.172 | 14.565 | vielleicht |
+| im Inneren | 514 | 5.337 | vielleicht |
+| **zusammen** | 65.801 (2,22 %) | 145.925 (2,22 %) | |
+
+Vermeidbar wären höchstens die letzten beiden Klassen: 0,19 % bzw. 0,30 % aller Dreiecke. Der
+große Rest liegt in Streifen zwischen fast parallelen Linien, die sich nicht treffen (z. B.
+Gebäudewand 2–5 cm neben der Grenze): Bei 3 cm Breite verschiebt das cm-Raster die Punkte um bis
+zu ein Sechstel der Kantenlänge, ein Mindestwinkel von 30° ist dort kaum zu halten. Abhilfe wäre
+nur, solche Streifen zusammenzulegen, also Linien um mehrere cm zu verschieben (Datenentscheidung).
+
+Die übrigen schlechten Dreiecke liegen damit an Segmenten im Bereich 2–5 cm und in echten
 Eingabekeilen. Dort lässt sich mit Punkten auf einem cm-Raster kein guter Winkel erreichen.
 Größere Toleranzen helfen, sind aber eine Datenentscheidung. Ausprobiert und verworfen: den
 Abschnitt eines langen Keils zusammenführen, auf dem die Linien näher als die Toleranz liegen. Die

@@ -174,7 +174,8 @@ namespace TriangleNet.Tests.Corpus
                     $"{stats.Sum(r => r.Stats["triangles"])} triangles, Steiner limit reached x {stats.Count(r => r.Stats["limit"] > 0)}, " +
                     $"bad triangles {stats.Sum(r => r.Stats["bad"])} ({100.0 * stats.Sum(r => r.Stats["bad"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %) in {stats.Count(r => r.Stats["bad"] > 0)} cases, " +
                     $"flipped by rounding {stats.Sum(r => r.Stats["flip"])} in {stats.Count(r => r.Stats["flip"] > 0)} cases, " +
-                    $"bad after rounding {stats.Sum(r => r.Stats["badr"])} ({100.0 * stats.Sum(r => r.Stats["badr"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %)");
+                    $"bad after rounding {stats.Sum(r => r.Stats["badr"])} ({100.0 * stats.Sum(r => r.Stats["badr"]) / Math.Max(1, stats.Sum(r => r.Stats["triangles"])):F2} %), " +
+                    $"bad by class: small input angle {stats.Sum(r => r.Stats["ba"])}, grid floor {stats.Sum(r => r.Stats["bf"])}, narrow strip {stats.Sum(r => r.Stats["bn"])}, at segment {stats.Sum(r => r.Stats["bs"])}, interior {stats.Sum(r => r.Stats["bi"])}");
 
                 foreach (var r in stats.OrderByDescending(r => r.Stats["ms"]).Take(5))
                 {

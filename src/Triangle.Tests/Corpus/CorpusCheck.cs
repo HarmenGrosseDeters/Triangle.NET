@@ -167,7 +167,140 @@ namespace TriangleNet.Tests.Corpus
                 }
             }
 
-            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)} flip={flip} badr={badRounded}";
+            var (classAngle, classFloor, classStrip, classSegment, classInterior) = Classify(mesh, minAngle, gridSize);
+
+            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)} flip={flip} badr={badRounded}" +
+                $" ba={classAngle} bf={classFloor} bn={classStrip} bs={classSegment} bi={classInterior}";
+        }
+
+        /// <summary>
+        /// Classify the bad triangles: at a small input angle (a vertex where two segments form an
+        /// angle below the minimum angle), below the grid floor (shortest edge less than two grid
+        /// cells), in a narrow strip between a segment and another segment closer than 5 cm,
+        /// touching a segment, or in the interior.
+        /// </summary>
+        private static (int, int, int, int, int) Classify(Mesh mesh, double minAngle, double gridSize)
+        {
+            if (minAngle <= 0)
+            {
+                return (0, 0, 0, 0, 0);
+            }
+
+            const double strip = 0.05;
+
+            // Directions of the segments at each vertex, and the segment edges.
+            var directions = new Dictionary<int, List<double>>();
+            var segments = new HashSet<(int, int)>();
+
+            foreach (var s in mesh.Segments)
+            {
+                Vertex a = s.GetVertex(0), b = s.GetVertex(1);
+
+                void Add(Vertex p, Vertex q)
+                {
+                    if (!directions.TryGetValue(p.ID, out var list))
+                    {
+                        directions[p.ID] = list = new List<double>();
+                    }
+
+                    list.Add(Math.Atan2(q.Y - p.Y, q.X - p.X));
+                }
+
+                Add(a, b);
+                Add(b, a);
+                segments.Add((Math.Min(a.ID, b.ID), Math.Max(a.ID, b.ID)));
+            }
+
+            var smallAngle = new HashSet<int>();
+
+            foreach (var item in directions)
+            {
+                var d = item.Value;
+
+                if (d.Count < 2) continue;
+
+                d.Sort();
+
+                for (int i = 0; i < d.Count; i++)
+                {
+                    double gap = (i + 1 < d.Count ? d[i + 1] - d[i] : d[0] + 2 * Math.PI - d[i]) * 180 / Math.PI;
+
+                    if (gap < minAngle - 0.01)
+                    {
+                        smallAngle.Add(item.Key);
+                        break;
+                    }
+                }
+            }
+
+            int angle = 0, floor = 0, narrow = 0, segment = 0, interior = 0;
+
+            var segmentList = mesh.Segments.ToList();
+
+            // Is a segment other than (p, q) (and its collinear continuations) closer than the
+            // strip width to the point?
+            bool InStrip(Point c, Vertex p, Vertex q)
+            {
+                double ux = q.X - p.X, uy = q.Y - p.Y;
+
+                foreach (var s in segmentList)
+                {
+                    Vertex a = s.GetVertex(0), b = s.GetVertex(1);
+
+                    if (Math.Max(Math.Min(a.X, b.X) - c.X, c.X - Math.Max(a.X, b.X)) > strip ||
+                        Math.Max(Math.Min(a.Y, b.Y) - c.Y, c.Y - Math.Max(a.Y, b.Y)) > strip)
+                    {
+                        continue;
+                    }
+
+                    if (a.ID == p.ID || a.ID == q.ID || b.ID == p.ID || b.ID == q.ID)
+                    {
+                        double vx = b.X - a.X, vy = b.Y - a.Y;
+                        double sin = Math.Abs(ux * vy - uy * vx) / Math.Sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+
+                        if (sin < 0.2 || (a.ID == p.ID || a.ID == q.ID) && (b.ID == p.ID || b.ID == q.ID)) continue;
+                    }
+
+                    double dx = b.X - a.X, dy = b.Y - a.Y, l2 = dx * dx + dy * dy;
+                    double t = l2 == 0 ? 0 : Math.Max(0, Math.Min(1, ((c.X - a.X) * dx + (c.Y - a.Y) * dy) / l2));
+                    double ex = a.X + t * dx - c.X, ey = a.Y + t * dy - c.Y;
+
+                    if (ex * ex + ey * ey < strip * strip) return true;
+                }
+
+                return false;
+            }
+
+            foreach (var t in mesh.Triangles)
+            {
+                if (MinimumAngle(t) >= minAngle - 0.01) continue;
+
+                double shortest = double.MaxValue;
+                Vertex sp = null, sq = null;
+
+                for (int i = 0; i < 3; i++)
+                {
+                    Vertex p = t.GetVertex(i), q = t.GetVertex((i + 1) % 3);
+                    shortest = Math.Min(shortest, Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y)));
+
+                    if (segments.Contains((Math.Min(p.ID, q.ID), Math.Max(p.ID, q.ID))))
+                    {
+                        sp = p;
+                        sq = q;
+                    }
+                }
+
+                var centroid = new Point((t.GetVertex(0).X + t.GetVertex(1).X + t.GetVertex(2).X) / 3,
+                    (t.GetVertex(0).Y + t.GetVertex(1).Y + t.GetVertex(2).Y) / 3);
+
+                if (Enumerable.Range(0, 3).Any(i => smallAngle.Contains(t.GetVertexID(i)))) angle++;
+                else if (gridSize > 0 && shortest < 2 * gridSize) floor++;
+                else if (sp != null && InStrip(centroid, sp, sq)) narrow++;
+                else if (sp != null) segment++;
+                else interior++;
+            }
+
+            return (angle, floor, narrow, segment, interior);
         }
 
         private static double MinimumAngle(Topology.Triangle t) =>
