@@ -117,10 +117,18 @@ namespace TriangleNet.Tests.Corpus
 
             // Every input segment must be covered by mesh subsegments (within the snap tolerance).
             SegmentNoder.Node(poly, predicates, out double noderTolerance, minTolerance: snapTolerance);
-            double tol = Math.Max(Math.Max(scale * 1e-11, 4 * noderTolerance), Math.Max(gridSize, wedgeTolerance));
+            double tol = Math.Max(Math.Max(scale * 1e-11, 4 * noderTolerance), gridSize + wedgeTolerance);
 
             var subsegs = mesh.Segments.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList();
             int missing = poly.Segments.Count(s => !IsCovered(subsegs, s.GetVertex(0), s.GetVertex(1), tol));
+
+            if (missing > 0 && Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_DEBUG") == "1")
+            {
+                foreach (var m in poly.Segments.Where(s => !IsCovered(subsegs, s.GetVertex(0), s.GetVertex(1), tol)))
+                {
+                    Console.WriteLine($"missing {m.GetVertex(0).X:R} {m.GetVertex(0).Y:R} -> {m.GetVertex(1).X:R} {m.GetVertex(1).Y:R} tol={tol}");
+                }
+            }
 
             if (missing > 0)
             {
@@ -134,24 +142,45 @@ namespace TriangleNet.Tests.Corpus
 
             // Triangles which are flat or inverted after rounding the coordinates to the output grid.
             double og = gridSize > 0.0 ? gridSize : outputGrid;
-            int flip = 0;
+            int flip = 0, badRounded = bad;
 
             if (og > 0.0)
             {
                 Vertex R(Vertex v) => new Vertex(GridSnapper.Round(v.X, og), GridSnapper.Round(v.Y, og));
-                flip = mesh.Triangles.Count(t => predicates.CounterClockwise(R(t.GetVertex(0)), R(t.GetVertex(1)), R(t.GetVertex(2))) <= 0.0);
+
+                flip = 0;
+                badRounded = 0;
+
+                foreach (var t in mesh.Triangles)
+                {
+                    Vertex p = R(t.GetVertex(0)), q = R(t.GetVertex(1)), r = R(t.GetVertex(2));
+
+                    if (predicates.CounterClockwise(p, q, r) <= 0.0)
+                    {
+                        flip++;
+                        badRounded++;
+                    }
+                    else if (minAngle > 0 && MinimumAngle(p, q, r) < minAngle - 0.01)
+                    {
+                        badRounded++;
+                    }
+                }
             }
 
-            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)} flip={flip}";
+            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)} flip={flip} badr={badRounded}";
         }
 
-        private static double MinimumAngle(Topology.Triangle t)
+        private static double MinimumAngle(Topology.Triangle t) =>
+            MinimumAngle(t.GetVertex(0), t.GetVertex(1), t.GetVertex(2));
+
+        private static double MinimumAngle(Point p, Point q, Point r)
         {
             double min = 180;
+            var v = new[] { p, q, r };
 
             for (int i = 0; i < 3; i++)
             {
-                Point a = t.GetVertex(i), b = t.GetVertex((i + 1) % 3), c = t.GetVertex((i + 2) % 3);
+                Point a = v[i], b = v[(i + 1) % 3], c = v[(i + 2) % 3];
                 double ux = b.X - a.X, uy = b.Y - a.Y, vx = c.X - a.X, vy = c.Y - a.Y;
                 double angle = Math.Atan2(Math.Abs(ux * vy - uy * vx), ux * vx + uy * vy) * 180 / Math.PI;
                 min = Math.Min(min, angle);

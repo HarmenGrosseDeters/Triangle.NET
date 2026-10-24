@@ -12,6 +12,12 @@ Eingaben und Gleitkomma-Grenzfällen.
 > sank der Anteil schlechter Dreiecke von 8,7 % auf 1,1 %. Siehe
 > [Ergebnisse mit echten Daten](#ergebnisse-mit-echten-daten-alkis-und-dgm1-herne-opengeodatanrwde)
 > und [Absicherung für Performance-Arbeit](#absicherung-für-performance-arbeit-srctriangletestscharacterization).
+>
+> **Dritte Runde (Raster, Keile, Gelände):** Die 1,1 % gelten für die ungerundeten Koordinaten.
+> Nach dem Runden auf cm sind es 6–10 %, und rund 1 % der Dreiecke kippt. Neu sind Snap-Rounding
+> auf das Ausgaberaster (`GridSize`), das Zusammenführen dünner Keile (`WedgeTolerance`) und eine
+> TIN-Vereinfachung für DGM-Raster (`TerrainSimplifier`), siehe
+> [Raster, Keile und Geländevereinfachung](#raster-keile-und-geländevereinfachung).
 
 ## Kurzfazit
 
@@ -326,6 +332,83 @@ Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Ke
 
 Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
 (bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
+
+## Raster, Keile und Geländevereinfachung
+
+Testgetrieben entwickelt (Tests zuerst rot: `GridSnapRoundingTest`, `WedgeMergeTest`,
+`TerrainSimplifierTest`).
+
+**Raster (`ConstraintOptions.GridSize`, z. B. 0,01).** Wer die Koordinaten des Netzes beim
+Schreiben auf cm rundet, verschiebt jeden Punkt um bis zu 7 mm. An fast deckungsgleichen Linien
+sind die Dreiecke schmaler, dort kippen sie. Mit Raster liegen alle Punkte schon im Netz auf dem
+Raster, Runden ändert also nichts mehr:
+
+* Eingabe: Snap-Rounding (`SegmentNoder.SnapRound`, iteriertes Snap-Rounding nach Hobby bzw.
+  Halperin/Packer). Punkte und Schnittpunkte werden gerundet, Segmente, die durch die Rasterzelle
+  eines Punktes laufen, werden durch ihn geführt. Danach kreuzt sich nichts, und kein Punkt liegt
+  näher als eine halbe Zelle an einem fremden Segment.
+* Verfeinerung: Steiner-Punkte werden gerundet. Teilungspunkte auf Segmenten werden vorher auf das
+  Eingabesegment projiziert, sonst summieren sich die Abweichungen über die Teilungsstufen.
+  aCute-Relocation ist im Rastermodus aus (sie lief im Kreis). Dreiecke mit Kanten unter zwei
+  Rasterzellen werden nicht mehr wegen des Winkels verfeinert, sonst kaskadiert die Verfeinerung
+  an kleinen Eingabewinkeln bis auf das Raster (Zufallsdaten: 360.000 statt 1.500 Punkte).
+* Zum Schluss verschiebt `GridSnapper.SnapVertices` übrige Punkte nur, wenn kein Dreieck kippt.
+  Die Rundung liefert für Dezimalraster dieselben Werte wie `Math.Round(x, n)`.
+
+**Keile (`ConstraintOptions.WedgeTolerance`, z. B. 0,03).** Eine Linie, die von einer anderen
+unter weniger als 10° abgeht und deren anderes Ende näher als die Toleranz an ihr liegt, wird mit
+ihr zusammengeführt (Gebäudewand knapp neben der Flurstücksgrenze). Andere Punkte in derselben
+Entfernung bleiben unberührt, anders als bei einer größeren Snap-Toleranz. Ein Segment bewegt sich
+dabei höchstens um die Toleranz, auch bei Ketten von Keilen (geprüft gegen das Eingabesegment).
+
+Ergebnis, ALKIS Herne (Flurstücke + Gebäude + Nutzung, 201 Kacheln, Snap 1 cm), gemessen **nach
+dem Runden auf cm**:
+
+| Variante | schlechte Dreiecke 20° / 30° | gekippte Dreiecke 20° / 30° | Dreiecke 30° |
+|----------|-----------------------------|-----------------------------|--------------|
+| bisher | 6,13 % / 9,55 % | 33.858 / 92.501 (in 133 / 148 Kacheln) | 7,18 Mio. |
+| Raster 1 cm | 6,78 % / 7,19 % | 0 / 0 | 5,88 Mio. |
+| Keil 3 cm | 3,72 % / 6,44 % | 5.208 / 13.166 | 6,21 Mio. |
+| **Raster 1 cm + Keil 3 cm** | **5,28 % / 6,02 %** | **0 / 0** | 5,80 Mio. |
+
+Ohne Rundung gemessen hätte „bisher“ 1,10 % / 0,98 %. Das ist aber nicht das Netz, das beim
+Nutzer ankommt. Der Fallback-Adapter im alten Repo nutzt jetzt Raster (Rundungsgenauigkeit) und
+Keil-Toleranz (dreifache Snap-Toleranz) als Standard.
+
+Grenze: Auch mit Raster bleiben gut 5 % schlechte Dreiecke. Sie liegen in Keilen, die schmaler als
+zwei Rasterzellen sind. Dort lässt sich mit Punkten auf dem Raster kein guter Winkel erreichen,
+und gerundete Teilungspunkte neben sehr dünnen Dreiecken sind oft ungültig. Größere Toleranzen
+helfen, sind aber eine Datenentscheidung.
+
+**TIN-Vereinfachung (`Tools.TerrainSimplifier.Select`).** Wählt aus einem dichten DGM die Punkte
+aus, deren Triangulierung alle Punkte mit einem vertikalen Fehler unter der Schranke
+wiedergibt: Greedy Insertion nach Garland/Heckbert, wahlweise mit Bruchkanten. Pro Runde wird in
+jedem Dreieck der schlechteste Punkt eingefügt, sofern sein Fehler mindestens halb so groß ist
+wie der größte Fehler. Das spart gegenüber „alle auf einmal“ etwa 14 % Punkte. Eingefügt wird
+inkrementell, und nur Punkte in geänderten Dreiecken werden neu lokalisiert (Max-Heap). Da die
+Delaunay-Triangulation von Rasterpunkten nicht eindeutig ist (kozirkulär), wird zum Schluss gegen
+eine neu aufgebaute Triangulierung geprüft und bei Bedarf nachgebessert.
+
+| DGM1 Herne, 1 Mio. Punkte | ausgewählt | Laufzeit | danach Qualitätsnetz 30° |
+|---------------------------|------------|----------|--------------------------|
+| Fehler ≤ 20 cm | 34.900 (3,5 %) | 8 s | 74.600 Punkte, 1 s |
+| Fehler ≤ 10 cm | 104.300 (10,4 %) | 17 s | 183.000 Punkte, 2 s |
+| Fehler ≤ 5 cm | 268.000 (26,8 %) | 57 s | 393.000 Punkte, 4 s |
+
+Datenabhängige Triangulierung (Kantenflips nach Geländeform) wurde bewusst nicht umgesetzt: Sie
+erzeugt schmale Dreiecke und widerspricht damit dem Ziel der Qualitätsvermaschung.
+
+**Haben die Bugfixes die schwierigen Fälle verbessert?** Die Fixes des klassenweisen Reviews
+ändern an den Korpuszahlen nichts (GEOS und Herne bitgleich). Die Verbesserungen stammen aus den
+vorherigen Runden:
+
+| Fall | vorher | jetzt |
+|------|--------|-------|
+| GEOS, 2156 Fälle | 1 Fehler | 0 Fehler |
+| GEOS `TestRelateAA.xml#74` (Nadel) | 88 s | 2,7 s |
+| GEOS Isochronen am Steiner-Limit (20° / 30°) | 13 / 20 | 13 / 20 (unverändert, echte Feinstrukturen) |
+| Herne Nutzung, Snap 1 cm (ungerundet) | 8,70 % / 10,74 %, 1–2 Kacheln am Limit | 1,10 % / 0,98 %, kein Limit |
+| Herne Nutzung ohne Snap | lief nicht durch | läuft durch, aber 110 von 201 Kacheln am Limit, 78 % schlecht: Snap ist nötig |
 
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 

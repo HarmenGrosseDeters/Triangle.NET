@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using TriangleNet.Geometry;
 using TriangleNet.Meshing;
@@ -110,6 +111,52 @@ namespace TriangleNet.Tests.Robustness
             MeshAssert.IsValid(mesh);
 
             Assert.That(BadTriangles(mesh, 30), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void MergingMovesSegmentsAtMostTheWedgeTolerance()
+        {
+            // A polyline drifting away from the boundary beyond the wedge tolerance: merging
+            // vertex by vertex must not drag the boundary along further than the tolerance.
+            var poly = new Polygon();
+            poly.Add(TestData.Square(0, -10, 20), false);
+            poly.Add(new Segment(new Vertex(0, 0), new Vertex(20, 0)), true);
+
+            Vertex prev = new Vertex(2, 0);
+
+            for (int i = 1; i <= 8; i++)
+            {
+                var v = new Vertex(2 + 2 * i, 0.0075 * i);
+                poly.Add(new Segment(prev, v), true);
+                prev = v;
+            }
+
+            var noded = SegmentNoder.Node(poly, new RobustPredicates(), out _, minTolerance: 0.01, wedgeTolerance: 0.03);
+
+            // The boundary from (0,0) to (20,0) still exists as a chain of segments through
+            // vertices within the tolerance (merging didn't drag it towards the polyline).
+            var reached = new HashSet<(double, double)> { (0, 0) };
+            bool grown = true;
+
+            while (grown)
+            {
+                grown = false;
+
+                foreach (var s in noded.Segments)
+                {
+                    var p = (s.GetVertex(0).X, s.GetVertex(0).Y);
+                    var q = (s.GetVertex(1).X, s.GetVertex(1).Y);
+
+                    if (Math.Abs(p.Item2) > 0.03 + 1e-12 || Math.Abs(q.Item2) > 0.03 + 1e-12) continue;
+
+                    if (reached.Contains(p) && reached.Add(q) || reached.Contains(q) && reached.Add(p))
+                    {
+                        grown = true;
+                    }
+                }
+            }
+
+            Assert.That(reached.Contains((20, 0)), Is.True);
         }
     }
 }

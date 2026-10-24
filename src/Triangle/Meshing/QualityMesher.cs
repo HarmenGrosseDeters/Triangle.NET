@@ -652,15 +652,7 @@ namespace TriangleNet.Meshing
 #if USE_Z
                     newvertex.z = eorg.z + split * (edest.z - eorg.z);
 #endif
-                    if (GridSize > 0.0)
-                    {
-                        // Split vertices on the output grid (the subsegments bend slightly).
-                        // Subsegments shorter than the grid can't be split: the rounded
-                        // location coincides with an endpoint or isn't a valid split (below).
-                        newvertex.x = GridSnapper.Round(newvertex.x, GridSize);
-                        newvertex.y = GridSnapper.Round(newvertex.y, GridSize);
-                    }
-                    else if (!Behavior.NoExact)
+                    if (!Behavior.NoExact)
                     {
                         // Roundoff in the above calculation may yield a 'newvertex'
                         // that is not precisely collinear with 'eorg' and 'edest'.
@@ -678,6 +670,16 @@ namespace TriangleNet.Meshing
                                 newvertex.y += multiplier * (eorg.x - edest.x);
                             }
                         }
+                    }
+
+                    if (GridSize > 0.0 && !MoveToGrid(ref enctri, newvertex, eorg, edest,
+                        currentenc.SegOrg(), currentenc.SegDest()))
+                    {
+                        // No grid point is a valid split: the subsegment can't be split.
+                        mesh.vertices.Remove(newvertex.hash);
+                        unsplittable.Add(currentenc.seg);
+                        seg.org = null;
+                        continue;
                     }
 
                     // Check whether the new vertex lies on an endpoint, or whether inserting it
@@ -1286,6 +1288,52 @@ namespace TriangleNet.Meshing
         // SplitTriangle). Only subsegments which must not be split by the user's choice justify
         // inserting a vertex that encroaches upon them.
         private bool refusedAtPrecisionLimit;
+
+        /// <summary>
+        /// Move a split vertex to the grid (the subsegments bend slightly).
+        /// </summary>
+        /// <param name="tri">The triangle of the subsegment (for <see cref="IsValidSplit"/>).</param>
+        /// <param name="v">The split vertex.</param>
+        /// <param name="org">The origin of the subsegment.</param>
+        /// <param name="dest">The destination of the subsegment.</param>
+        /// <param name="segorg">The origin of the input segment.</param>
+        /// <param name="segdest">The destination of the input segment.</param>
+        /// <returns>False, if the rounded location isn't a valid split (the subsegment is
+        /// too short, or next to very thin triangles).</returns>
+        /// <remarks>
+        /// The subsegment's endpoints are already rounded, so the vertex is projected onto
+        /// the input segment before rounding. Otherwise the deviation from the input segment
+        /// would add up with each level of splitting.
+        /// </remarks>
+        private bool MoveToGrid(ref Otri tri, Vertex v, Vertex org, Vertex dest, Vertex segorg, Vertex segdest)
+        {
+            double x = v.x, y = v.y;
+            double px = x, py = y;
+
+            double dx = segdest.x - segorg.x, dy = segdest.y - segorg.y;
+            double l2 = dx * dx + dy * dy;
+
+            if (l2 > 0.0)
+            {
+                double t = ((x - segorg.x) * dx + (y - segorg.y) * dy) / l2;
+
+                px = segorg.x + t * dx;
+                py = segorg.y + t * dy;
+            }
+
+            v.x = GridSnapper.Round(px, gridSize);
+            v.y = GridSnapper.Round(py, gridSize);
+
+            if ((v.x != org.x || v.y != org.y) && (v.x != dest.x || v.y != dest.y) && IsValidSplit(ref tri, v))
+            {
+                return true;
+            }
+
+            v.x = x;
+            v.y = y;
+
+            return false;
+        }
 
         /// <summary>
         /// Check whether inserting the vertex on the edge of the given triangle creates

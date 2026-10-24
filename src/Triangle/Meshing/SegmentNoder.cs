@@ -447,6 +447,10 @@ namespace TriangleNet.Meshing
             // with distances close to the tolerance, snapping could otherwise go back and forth.
             var retired = new HashSet<(Vertex, Vertex)>(new EdgeComparer());
 
+            // The input segment each piece lies on (merging wedges must not move a segment by
+            // more than the wedge tolerance, also not by merging a chain of wedges).
+            var origin = wedgeTolerance > tolerance ? new Dictionary<ISegment, (Vertex, Vertex)>() : null;
+
             for (int iteration = 0; iteration < maxIterations && newPoints.Count <= maxNewPoints; iteration++)
             {
                 var splits = new Dictionary<int, List<(double, Vertex)>>();
@@ -460,7 +464,7 @@ namespace TriangleNet.Meshing
 
                 if (splits.Count == 0 && wedgeTolerance > tolerance)
                 {
-                    AddWedgeVertices(segments, vertices.All, tolerance, wedgeTolerance, retired, splits);
+                    AddWedgeVertices(segments, vertices.All, tolerance, wedgeTolerance, retired, splits, origin);
                 }
 
                 if (splits.Count == 0)
@@ -474,7 +478,7 @@ namespace TriangleNet.Meshing
                     retired.Add((segments[i].GetVertex(0), segments[i].GetVertex(1)));
                 }
 
-                segments = Split(segments, splits);
+                segments = Split(segments, splits, origin);
                 changed = true;
             }
 
@@ -812,7 +816,7 @@ namespace TriangleNet.Meshing
         /// </summary>
         private static void AddWedgeVertices(List<ISegment> segments, ICollection<Vertex> vertices,
             double tolerance, double wedgeTolerance, HashSet<(Vertex, Vertex)> retired,
-            Dictionary<int, List<(double, Vertex)>> splits)
+            Dictionary<int, List<(double, Vertex)>> splits, Dictionary<ISegment, (Vertex, Vertex)> origin)
         {
             var neighbors = new Dictionary<Vertex, List<Vertex>>(new ReferenceComparer());
 
@@ -858,6 +862,8 @@ namespace TriangleNet.Meshing
                 var a = segments[i].GetVertex(0);
                 var b = segments[i].GetVertex(1);
 
+                var (oa, ob) = origin.TryGetValue(segments[i], out var o) ? o : (a, b);
+
                 double dx = b.x - a.x, dy = b.y - a.y;
                 double length = Math.Sqrt(dx * dx + dy * dy);
 
@@ -880,6 +886,7 @@ namespace TriangleNet.Meshing
                     double t = ((v.x - a.x) * dx + (v.y - a.y) * dy) / (length * length);
 
                     if (distance <= wedgeTolerance && t > 0.0 && t < 1.0 &&
+                        DistanceToSegment(v, oa, ob) <= wedgeTolerance &&
                         (IsWedge(v, a, b) || IsWedge(v, b, a)) &&
                         !retired.Contains((a, v)) && !retired.Contains((v, b)))
                     {
@@ -889,7 +896,8 @@ namespace TriangleNet.Meshing
             }
         }
 
-        private static List<ISegment> Split(List<ISegment> segments, Dictionary<int, List<(double, Vertex)>> splits)
+        private static List<ISegment> Split(List<ISegment> segments, Dictionary<int, List<(double, Vertex)>> splits,
+            Dictionary<ISegment, (Vertex, Vertex)> origin = null)
         {
             var result = new List<ISegment>(segments.Count + 2 * splits.Count);
 
@@ -897,6 +905,15 @@ namespace TriangleNet.Meshing
             // segments, used to avoid duplicate new segments.
             // For new segments the Segment is stored (null for unchanged input segments).
             var existing = new Dictionary<(Vertex, Vertex), (int Label, Segment Created)>(new EdgeComparer());
+
+            // Pieces inherit the input segment they lie on.
+            void AddOrigin(ISegment piece, ISegment parent)
+            {
+                if (origin != null)
+                {
+                    origin[piece] = origin.TryGetValue(parent, out var o) ? o : (parent.GetVertex(0), parent.GetVertex(1));
+                }
+            }
 
             for (int i = 0; i < segments.Count; i++)
             {
@@ -906,13 +923,14 @@ namespace TriangleNet.Meshing
                 }
             }
 
-            void AddNew(Vertex a, Vertex b, int label)
+            void AddNew(Vertex a, Vertex b, int label, ISegment parent)
             {
                 if (!existing.TryGetValue((a, b), out var entry))
                 {
                     var segment = new Segment(a, b, label);
                     existing.Add((a, b), (label, segment));
                     result.Add(segment);
+                    AddOrigin(segment, parent);
                 }
                 else if (entry.Label == 0 && label != 0)
                 {
@@ -929,6 +947,7 @@ namespace TriangleNet.Meshing
                         var segment = new Segment(a, b, label);
                         existing[(a, b)] = (label, segment);
                         result.Add(segment);
+                        AddOrigin(segment, parent);
                     }
                 }
             }
@@ -958,14 +977,14 @@ namespace TriangleNet.Meshing
 
                     if (!SameLocation(prev, v))
                     {
-                        AddNew(prev, v, s.Label);
+                        AddNew(prev, v, s.Label, s);
                         prev = v;
                     }
                 }
 
                 if (!SameLocation(prev, last))
                 {
-                    AddNew(prev, last, s.Label);
+                    AddNew(prev, last, s.Label, s);
                 }
             }
 
