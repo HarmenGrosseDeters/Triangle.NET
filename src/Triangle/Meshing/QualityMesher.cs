@@ -760,6 +760,10 @@ namespace TriangleNet.Meshing
                 bool survived = false;
                 bool relocated = false;
 
+                int queuedAtStart = badsubsegs.Count;
+                InsertVertexResult lastResult = InsertVertexResult.Successful;
+                refusedAtPrecisionLimit = false;
+
                 for (int attempt = 0; attempt < 2; attempt++)
                 {
                     bool useAcute = enableAcute && attempt == 0;
@@ -852,30 +856,29 @@ namespace TriangleNet.Meshing
 
                         // Check for encroached subsegments before modifying the mesh (inserting
                         // and undoing a vertex with a large cavity is expensive).
+                        int queued = badsubsegs.Count;
                         bool encroaches = EncroachesBeforeInsertion(newvertex, badotri);
 
-                        success = encroaches ? InsertVertexResult.Encroaching
-                            : mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
+                        if (encroaches && badsubsegs.Count == queued && !refusedAtPrecisionLimit)
+                        {
+                            // Only subsegments which must not be split are encroached (segment
+                            // splitting disabled, locked segments). Rejecting the vertex would
+                            // drop the bad triangle for good, so it is inserted anyway: it lies
+                            // inside the domain, only the subsegment can't be split.
+                            encroaches = false;
+                            success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, false, true);
+                        }
+                        else
+                        {
+                            success = encroaches ? InsertVertexResult.Encroaching
+                                : mesh.InsertVertex(newvertex, ref badotri, ref tmp, true, true);
+                        }
+
+                        lastResult = success;
 
                         if (success == InsertVertexResult.Successful)
                         {
-                            newvertex.hash = mesh.hash_vtx++;
-                            newvertex.id = newvertex.hash;
-    #if USE_ATTRIBS
-                            if (mesh.nextras > 0)
-                            {
-                                Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
-                            }
-    #endif
-    #if USE_Z
-                            Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
-    #endif
-                            mesh.vertices.Add(newvertex.hash, newvertex);
-
-                            if (mesh.steinerleft > 0)
-                            {
-                                mesh.steinerleft--;
-                            }
+                            AddInsertedVertex(newvertex);
 
                             if (relocated)
                             {
@@ -910,6 +913,16 @@ namespace TriangleNet.Meshing
                     }
                 }
 
+                if (!errorflag && !relocated && lastResult == InsertVertexResult.Violating && !refusedAtPrecisionLimit &&
+                    badsubsegs.Count == queuedAtStart && IsAlive(badtri) && IsTooLarge(badtri.poortri))
+                {
+                    // The new vertex lies beyond a subsegment which must not be split (segment
+                    // splitting disabled, locked segments), so the triangle would be dropped. If
+                    // it is too large, split it at its centroid instead (the area constraint is
+                    // met eventually; bad angles at such subsegments can't be fixed anyway).
+                    InsertCentroid(badtri.poortri);
+                }
+
                 if (errorflag)
                 {
                     // The triangle is too small to be refined with the finite precision of
@@ -920,6 +933,102 @@ namespace TriangleNet.Meshing
                             "Quality.SplitTriangle()");
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Register a vertex which has been inserted successfully.
+        /// </summary>
+        private void AddInsertedVertex(Vertex newvertex)
+        {
+            newvertex.hash = mesh.hash_vtx++;
+            newvertex.id = newvertex.hash;
+#if USE_ATTRIBS
+            if (mesh.nextras > 0)
+            {
+                Interpolation.InterpolateAttributes(newvertex, newvertex.tri.tri, mesh.nextras);
+            }
+#endif
+#if USE_Z
+            Interpolation.InterpolateZ(newvertex, newvertex.tri.tri);
+#endif
+            mesh.vertices.Add(newvertex.hash, newvertex);
+
+            if (mesh.steinerleft > 0)
+            {
+                mesh.steinerleft--;
+            }
+        }
+
+        /// <summary>
+        /// Returns true, if the triangle violates the area constraint.
+        /// </summary>
+        private bool IsTooLarge(Otri tri)
+        {
+            Vertex org = tri.Org(), dest = tri.Dest(), apex = tri.Apex();
+
+            double area = 0.5 * ((dest.x - org.x) * (apex.y - org.y) - (apex.x - org.x) * (dest.y - org.y));
+
+            return (behavior.fixedArea && area > behavior.MaxArea) ||
+                (behavior.VarArea && tri.tri.area > 0.0 && area > tri.tri.area);
+        }
+
+        /// <summary>
+        /// Insert a vertex at the centroid of the triangle.
+        /// </summary>
+        private void InsertCentroid(Otri tri)
+        {
+            Vertex org = tri.Org(), dest = tri.Dest(), apex = tri.Apex();
+
+            var v = new Vertex((org.x + dest.x + apex.x) / 3.0, (org.y + dest.y + apex.y) / 3.0, 0
+#if USE_ATTRIBS
+                , mesh.nextras
+#endif
+                );
+
+            v.type = VertexType.FreeVertex;
+            v.tri.tri = newvertex_tri;
+
+            // The rounded centroid must lie inside the triangle.
+            if (predicates.CounterClockwise(org, dest, v) <= 0.0 ||
+                predicates.CounterClockwise(dest, apex, v) <= 0.0 ||
+                predicates.CounterClockwise(apex, org, v) <= 0.0)
+            {
+                return;
+            }
+
+            Osub tmp = default(Osub);
+            InsertVertexResult success;
+
+            int queued = badsubsegs.Count;
+
+            refusedAtPrecisionLimit = false;
+
+            if (EncroachesBeforeInsertion(v, tri))
+            {
+                if (badsubsegs.Count > queued || refusedAtPrecisionLimit)
+                {
+                    // Encroached subsegments which can be split are split first (the triangle is
+                    // put back in the queue).
+                    return;
+                }
+
+                success = mesh.InsertVertex(v, ref tri, ref tmp, false, true);
+            }
+            else
+            {
+                success = mesh.InsertVertex(v, ref tri, ref tmp, true, true);
+
+                if (success == InsertVertexResult.Encroaching)
+                {
+                    mesh.UndoVertex();
+                    return;
+                }
+            }
+
+            if (success == InsertVertexResult.Successful)
+            {
+                AddInsertedVertex(v);
             }
         }
 
@@ -1134,9 +1243,19 @@ namespace TriangleNet.Meshing
         /// </summary>
         internal bool CanSplit(SubSegment seg)
         {
-            return !unsplittable.Contains(seg) &&
-                (behavior.CanSplitSegment == null || behavior.CanSplitSegment(seg));
+            if (unsplittable.Contains(seg))
+            {
+                refusedAtPrecisionLimit = true;
+                return false;
+            }
+
+            return behavior.CanSplitSegment == null || behavior.CanSplitSegment(seg);
         }
+
+        // Set if CanSplit refused a subsegment because of the precision limit (reset by
+        // SplitTriangle). Only subsegments which must not be split by the user's choice justify
+        // inserting a vertex that encroaches upon them.
+        private bool refusedAtPrecisionLimit;
 
         /// <summary>
         /// Check whether inserting the vertex on the edge of the given triangle creates

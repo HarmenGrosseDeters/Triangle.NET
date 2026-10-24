@@ -181,6 +181,8 @@ paralleles Vermaschen mit eigenen Prädikaten.
 | neu | **aCute: schlechte Dreiecke gingen verloren.** Der aCute-Ort liegt nicht immer im Umkreis des schlechten Dreiecks; dann blieb das Dreieck nach dem Einfügen bestehen, war aber schon aus der Warteschlange entfernt. Folge: `MaximumArea` wurde verletzt (Quadrat, 20°: 9 zu große Dreiecke), und auf ALKIS-Daten blieben viele Dreiecke unter dem Mindestwinkel (Kachel 381000/5710400, 30°: **618 statt 9**, zugleich 20× langsamer). Jetzt wird ein aCute-Ort nur verwendet, wenn er echt im Umkreis und nicht (fast) auf einer Ecke liegt, und ein überlebendes Dreieck wird über den Umkreismittelpunkt geteilt. Fehler auch in Upstream. | `Meshing/QualityMesher.cs` |
 | neu | **aCute: Endlosverschiebung von Punkten.** aCute verschiebt („relocation“) Punkte, indem es sie löscht und neu einfügt. Mit Flächenvorgaben pro Region wurde derselbe Punkt immer wieder hin und her verschoben. Upstream wirft „The new vertex is at the circumcenter of triangle“; nach den ersten Fixes lief die Verfeinerung bis zum Steiner-Limit und lieferte ein grobes Netz (5 Dreiecke). Jetzt wird jeder Punkt höchstens einmal verschoben. | `NewLocation.cs`, `Meshing/QualityMesher.cs` |
 | neu | **Noder: Schnittpunkt am Segmentende blockierte das Snapping.** Ein Schnittpunkt nahe einem Segmentende wurde mit dem Endpunkt verschmolzen und das Segment dort „geteilt“. Das änderte nichts, markierte das Segment aber als bereits geteilt, sodass ein fast kollinearer Punkt nicht mehr hineingesnappt wurde. Zwei Segmente mit 0,0002° Zwischenwinkel blieben stehen, und die Qualitätsvermaschung verbrauchte das gesamte Steiner-Budget in diesem Keil (ALKIS Herne mit Nutzung, 1 cm: 203.175 Dreiecke, davon 154.870 unter 20° → 24.355 Dreiecke, 222 unter 20°). Die unnötigen Teilungen verbrauchten außerdem Noding-Iterationen: Gestapelte Quadrate mit 1e-6 Versatz werden jetzt vernetzt statt abgelehnt. | `Meshing/SegmentNoder.cs` |
+| neu | **Segmente, die nicht geteilt werden dürfen** (`SegmentSplitting` 1/2, `CanSplitSegment`): Lag der neue Punkt im Umkreis eines solchen Segments oder jenseits davon, wurde das schlechte Dreieck ersatzlos verworfen (Upstream-Issue #9: Rechteck 10×20 mit Maximalfläche 1,73 ergab 8 Dreiecke). Jetzt wird der Punkt trotzdem eingefügt bzw. ein zu großes Dreieck am Schwerpunkt geteilt. Segmente, die nur wegen der Präzisionsgrenze nicht mehr geteilt werden, sind ausgenommen. | `Meshing/QualityMesher.cs` |
+| neu | **Beeinträchtigte Segmente vor dem Einfügen prüfen:** Statt einen Punkt einzufügen, Kanten zu flippen und bei einem beeinträchtigten Segment alles zurückzunehmen, wird der Hohlraum vorab mit denselben Tests bestimmt. Nadelförmige Gebiete (GEOS `TestRelateAA#74`, 80.000 Punkte): 79 s → 2,1 s; der GEOS-Korpus läuft jetzt ohne Timeout. | `Meshing/QualityMesher.cs` |
 | neu | `FastExpansionSumZeroElim` las (wie das C-Original) ein Element hinter dem Ende einer Expansion; in C# eine `IndexOutOfRangeException`, ausgelöst durch unendliche Koordinaten. | `RobustPredicates.cs` |
 
 **Ergebnis (Fuzzing, jeder Fall in eigenem Prozess):**
@@ -324,6 +326,31 @@ Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Ke
 
 Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
 (bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
+
+## Upstream-Issues (github.com/wo80/Triangle.NET/issues)
+
+Alle 48 Issues wurden gesichtet (Stand Oktober 2026). Fehlerberichte mit genug Information sind
+in `UpstreamIssuesTest` als Test nachgestellt; Fragen zur Benutzung, Feature-Wünsche und
+Diskussionen sind nicht aufgeführt.
+
+| Issue | Status upstream | Inhalt | Stand im Fork |
+|-------|-----------------|--------|---------------|
+| #59 | offen | `SweepLine.RightOfHyperbola`: NullReferenceException | Keine Eingabedaten im Bericht. 50 Zufalls-/Degenerationsfälle (Duplikate, Kollinearität, UTM) laufen fehlerfrei; zusätzlich der Flip-Fix von SweepLine (Befund 10). Nicht abschließend bestätigt. |
+| #58 | geschlossen (Workaround) | `GetStarPoints` vergrößert Arbeitsarray endlos, Speicherüberlauf | Puffer begrenzt (Upstream-Fix enthalten). |
+| #54, #19 | offen / geschlossen | `RobustPredicates.Default` nicht thread-sicher | **Behoben** (thread-lokaler Arbeitsspeicher, Befund 4); Test mit 200 parallelen Triangulierungen. |
+| #48 | offen | `VertexCirculator` wirft NullReferenceException für Eingabepunkte | Nicht reproduzierbar: Umlauf und anschließendes Verfeinern funktionieren. |
+| #39 | geschlossen | `EnforceQuality` hängt | Steiner-Limit, aCute-Fixes, Endlosschleifen-Schutz; Korpus ohne Hänger. |
+| #35 | geschlossen | Example 5 (Regionsflächen mit aCute): „new vertex is at the circumcenter“ | **Behoben** (aCute-Verschiebung, siehe Fixes); Test. |
+| #31 | geschlossen | Ungleichmäßige Elementgrößen | Upstream durch aCute behoben; der Fork behebt zusätzlich die verlorenen Dreiecke (Maximalfläche). |
+| #18 | geschlossen | `SimpleSmoother` stürzt bei doppeltem Punkt ab | Funktioniert; Test. |
+| #14 | geschlossen | `Polygon(int capacity)` ignoriert die Kapazität | Behoben; Test. |
+| #13 | geschlossen | „Ran out of precision“ mit maximaler Kantenlänge (`UserTest`) | Funktioniert (Präzisionsgrenze bei der Verfeinerung); Test. |
+| #9 | offen | Maximalfläche ohne Segmentteilung: 10×30-Rechteck geht, 10×20 nicht | **Behoben.** Ursache: Liegt der neue Punkt im Umkreis eines Segments, das nicht geteilt werden darf, oder jenseits davon, wurde das Dreieck ersatzlos verworfen (10×20: 8 statt ≥ 116 Dreiecke). Jetzt wird der Punkt trotzdem eingefügt bzw. ein zu großes Dreieck am Schwerpunkt geteilt. Betrifft auch gesperrte Bruchkanten (`CanSplitSegment`). |
+| #8 | geschlossen | Bounded Voronoi nach Glättung hängt | Funktioniert (10 Zufallsfälle); Test. |
+| #7 | offen | IDs über `GetHashCode` | IDs sind fortlaufende Zähler; `Vertex` nutzt den koordinatenbasierten Hashcode (Befund 9). |
+| #5, #1 | offen / geschlossen | „Topological inconsistency after splitting a segment“ | **Behoben** durch Noding (Befunde 1–3); die Daten aus #1 sind als Test nachgestellt. |
+| #3 | geschlossen | Glätten mit freistehendem Segment | Funktioniert; Test. |
+| #49 | geschlossen | Loch wird nicht vollständig entfernt, wenn Segmente es kreuzen | Bekannte Einschränkung: Löcher werden von einem Startpunkt aus bis zu Segmenten „infiziert“; ein Segment im Loch trennt den Rest ab. Abhilfe: Regionen statt Löcher (siehe Alter-Stand-Bewertung). |
 
 ## Die Testsuite (`src/Triangle.Tests/Robustness`)
 
