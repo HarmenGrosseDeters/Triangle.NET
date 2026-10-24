@@ -20,15 +20,18 @@ namespace TriangleNet.Tools
         /// <param name="a">The segment start point.</param>
         /// <param name="b">The segment end point.</param>
         /// <param name="test">The point to test.</param>
-        /// <param name="eps">Threshold to test collinearity (default = 1e-12).</param>
+        /// <param name="eps">Threshold to test collinearity, relative to the squared segment length (default = 1e-12).</param>
         /// <returns></returns>
         public static bool IsPointOnSegment(Point a, Point b, Point test, double eps = 1e-12)
         {
             // The cross product.
             double cross = (test.Y - a.Y) * (b.X - a.X) - (test.X - a.X) * (b.Y - a.Y);
 
-            // Check if points are collinear.
-            if (Math.Abs(cross) > eps) return false;
+            // Check if points are collinear (relative to the segment length: the cross product
+            // is the distance to the line times the length).
+            double length2 = (b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y);
+
+            if (Math.Abs(cross) > eps * length2) return false;
 
             // The dot product (projection of test point onto segment).
             double dot = (test.X - a.X) * (b.X - a.X) + (test.Y - a.Y) * (b.Y - a.Y);
@@ -185,6 +188,12 @@ namespace TriangleNet.Tools
         /// <returns>Returns false, if startpoint is outside the box.</returns>
         public static bool BoxRayIntersection(Rectangle rect, Point p, double dx, double dy, ref Point c)
         {
+            if (dx == 0.0 && dy == 0.0)
+            {
+                // No direction.
+                return false;
+            }
+
             double x = p.X;
             double y = p.Y;
 

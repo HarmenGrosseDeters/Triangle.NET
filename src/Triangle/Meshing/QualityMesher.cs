@@ -81,14 +81,6 @@ namespace TriangleNet.Meshing
                 enableAcute = !quality.UseLegacyRefinement;
             }
 
-            // TODO: remove
-            if (!behavior.Poly)
-            {
-                // Be careful not to allocate space for element area constraints that
-                // will never be assigned any value (other than the default -1.0).
-                behavior.VarArea = false;
-            }
-
             // Ensure that no vertex can be mistaken for a triangular bounding
             // box vertex in insertvertex().
             mesh.infvertex1 = null;
@@ -1327,7 +1319,7 @@ namespace TriangleNet.Meshing
             // triangulation should be (conforming) Delaunay.
 
             // Next, we worry about enforcing triangle quality.
-            if ((behavior.MinAngle > 0.0) || behavior.VarArea || behavior.fixedArea || behavior.UserTest != null)
+            if ((behavior.MinAngle > 0.0) || (behavior.MaxAngle > 0.0) || behavior.VarArea || behavior.fixedArea || behavior.UserTest != null)
             {
                 // TODO: Reset queue? (Or is it always empty at this point)
 

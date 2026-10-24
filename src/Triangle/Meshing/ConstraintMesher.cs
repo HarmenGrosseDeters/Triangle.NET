@@ -190,8 +190,6 @@ namespace TriangleNet.Meshing
                                 // Record the triangle for processing after the
                                 // holes have been carved.
                                 regionTris[i] = searchtri.tri;
-                                regionTris[i].label = region.Label;
-                                regionTris[i].area = region.Area;
                             }
                         }
                     }
@@ -218,8 +216,19 @@ namespace TriangleNet.Meshing
                         // It may have been eaten by the virus.
                         if (!Otri.IsDead(regionTris[i]))
                         {
-                            // Apply one region's attribute and/or area constraint.
-                            iterator.Process(regionTris[i]);
+                            // Apply one region's attribute and/or area constraint. The values
+                            // are taken from the region (not from the seed triangle, which an
+                            // earlier region in the same area may have overwritten), so for
+                            // several region points in one area the last one wins (as in Triangle).
+                            var region = mesh.regions[i];
+                            int label = region.Label;
+                            double area = region.Area;
+
+                            iterator.Process(regionTris[i], tri =>
+                            {
+                                tri.label = label;
+                                tri.area = area;
+                            });
                         }
                     }
                 }

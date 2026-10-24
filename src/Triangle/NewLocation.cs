@@ -2474,12 +2474,14 @@ namespace TriangleNet
             //double p[5];
 
             // Resize work arrays
-            if (2 * numpoints > petalx.Length)
+            // The work arrays are shared with the other wedge intersection method, which
+            // needs a different size of 'wedges': check both.
+            if (2 * numpoints > petalx.Length || 2 * numpoints * 16 + 36 > wedges.Length)
             {
-                petalx = new double[2 * numpoints];
-                petaly = new double[2 * numpoints];
-                petalr = new double[2 * numpoints];
-                wedges = new double[2 * numpoints * 16 + 36];
+                petalx = new double[Math.Max(2 * numpoints, petalx.Length)];
+                petaly = new double[Math.Max(2 * numpoints, petaly.Length)];
+                petalr = new double[Math.Max(2 * numpoints, petalr.Length)];
+                wedges = new double[Math.Max(2 * numpoints * 16 + 36, wedges.Length)];
             }
 
             double xmid, ymid, dist, x3, y3;
@@ -2736,12 +2738,14 @@ namespace TriangleNet
             //double p[5];
 
             // Resize work arrays
-            if (2 * numpoints > petalx.Length)
+            // The work arrays are shared with the other wedge intersection method, which
+            // needs a different size of 'wedges': check both.
+            if (2 * numpoints > petalx.Length || 2 * numpoints * 20 + 40 > wedges.Length)
             {
-                petalx = new double[2 * numpoints];
-                petaly = new double[2 * numpoints];
-                petalr = new double[2 * numpoints];
-                wedges = new double[2 * numpoints * 20 + 40];
+                petalx = new double[Math.Max(2 * numpoints, petalx.Length)];
+                petaly = new double[Math.Max(2 * numpoints, petaly.Length)];
+                petalr = new double[Math.Max(2 * numpoints, petalr.Length)];
+                wedges = new double[Math.Max(2 * numpoints * 20 + 40, wedges.Length)];
             }
 
             double xmid, ymid, dist, x3, y3;

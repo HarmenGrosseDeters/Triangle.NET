@@ -7,6 +7,7 @@
 
 namespace TriangleNet.Meshing.Data
 {
+    using System;
     using TriangleNet.Geometry;
     using TriangleNet.Topology;
 
@@ -105,6 +106,10 @@ namespace TriangleNet.Meshing.Data
             {
                 queuenumber = 2048 + exponent;
             }
+
+            // Keys of 0, subnormal or infinite (edges shorter than about 1e-154 or longer than
+            // 1e154) are outside the computed range.
+            queuenumber = Math.Max(0, Math.Min(4095, queuenumber));
 
             // Are we inserting into an empty queue?
             if (queuefront[queuenumber] == null)

@@ -244,11 +244,12 @@ namespace TriangleNet.Tools
                             k = k + 1;
                             nbr = perm[offset + k - 1];
 
-                            while (fnbr < l)
+                            // Indices are 0-based here (the original code was 1-based).
+                            while (fnbr <= l)
                             {
                                 lperm = perm[offset + l - 1];
 
-                                if (deg[lperm - 1] <= deg[nbr - 1])
+                                if (deg[lperm] <= deg[nbr])
                                 {
                                     break;
                                 }
@@ -355,8 +356,8 @@ namespace TriangleNet.Tools
                     {
                         node = level[offset + j - 1];
                         ndeg = 0;
-                        kstrt = pcol[node - 1];
-                        kstop = pcol[node] - 1;
+                        kstrt = pcol[node];
+                        kstop = pcol[node + 1] - 1;
 
                         for (k = kstrt; k <= kstop; k++)
                         {

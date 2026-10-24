@@ -65,6 +65,8 @@ namespace TriangleNet.Smoothing
                 vertex.x = x;
                 vertex.y = y;
                 vertex.leaving = null;
+                vertex.label = 0;
+                vertex.id = 0;
 
                 return vertex;
             }
@@ -108,9 +110,12 @@ namespace TriangleNet.Smoothing
 
             if (faces.TryGet(out face))
             {
+                // Same state as a new face.
                 face.id = vertex.id;
                 face.generator = vertex;
                 face.edge = null;
+                face.bounded = true;
+                face.label = vertex.label;
 
                 return face;
             }

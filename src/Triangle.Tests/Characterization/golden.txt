@@ -2,7 +2,7 @@ crossing-segments/cdt V=254 T=502 S=384 H=bf81edf07e78350b
 crossing-segments/conforming V=826 T=1575 S=956 H=d68dce809dfb02b1
 crossing-segments/q20 V=966 T=1870 S=910 H=76f061d745864ccf
 crossing-segments/q20-locked V=718 T=1376 S=683 H=73db4687411d37d1
-crossing-segments/q20-split1 V=843 T=1680 S=832 H=2e87800f1868a585
+crossing-segments/q20-split1 V=883 T=1760 S=842 H=c1f4cbf4d55ca92c
 crossing-segments/q20-split2 V=348 T=690 S=384 H=7d65f2e742a90bdd
 crossing-segments/q25-conforming V=1805 T=3516 S=1476 H=53d733fb7263e4dd
 crossing-segments/q28-legacy V=2288 T=4481 S=1421 H=231417f572d6dae6
@@ -61,7 +61,7 @@ star/cdt V=29 T=52 S=28 H=5bc51ce8a1a2dccd
 star/conforming V=41 T=64 S=40 H=995ef7419a113eb9
 star/q20 V=73 T=132 S=57 H=ab2301bf2fe73b12
 star/q20-locked V=61 T=108 S=36 H=cba2b0965478a18f
-star/q20-split1 V=62 T=118 S=49 H=674428aa6b61da20
+star/q20-split1 V=65 T=124 S=49 H=ced110f295f6ce3a
 star/q20-split2 V=53 T=100 S=28 H=ed1b8bb3c07b060e
 star/q25-conforming V=119 T=220 S=82 H=9c180df1bfdb281f
 star/q28-legacy V=217 T=402 S=104 H=713f81fc266ce714
@@ -70,7 +70,7 @@ utm-breaklines/cdt V=472 T=938 S=164 H=7dd74060ee3f73cf
 utm-breaklines/conforming V=745 T=1392 S=437 H=469273a785ce5031
 utm-breaklines/q20 V=994 T=1911 S=377 H=f2bd7f6462bcee59
 utm-breaklines/q20-locked V=855 T=1632 S=312 H=aebdd9f6243551b3
-utm-breaklines/q20-split1 V=900 T=1794 S=306 H=6016275b703bca6b
+utm-breaklines/q20-split1 V=907 T=1808 S=306 H=615f4f7534322a5e
 utm-breaklines/q20-split2 V=593 T=1180 S=164 H=60668d1cfa86add9
 utm-breaklines/q25-conforming V=1440 T=2761 S=548 H=0e9c30ea67a8421a
 utm-breaklines/q28-legacy V=1973 T=3836 S=530 H=4c9fa8625248c6c7

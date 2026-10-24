@@ -133,6 +133,9 @@ namespace TriangleNet.Meshing
 
             var segments = new List<ISegment>(polygon.Segments.Count);
 
+            // Segments which collapsed to a point.
+            var vanished = new List<(Vertex, Vertex)>();
+
             foreach (var s in polygon.Segments)
             {
                 var a = s.GetVertex(0);
@@ -151,6 +154,10 @@ namespace TriangleNet.Meshing
                 if (!SameLocation(ma, mb))
                 {
                     segments.Add(new Segment(ma, mb, s.Label));
+                }
+                else
+                {
+                    vanished.Add((a, b));
                 }
             }
 
@@ -200,11 +207,25 @@ namespace TriangleNet.Meshing
                     HasSegmentMarkers = polygon.HasSegmentMarkers
                 };
 
+                // New vertices get IDs above the user's IDs (otherwise user IDs are no longer
+                // unique and the mesh renumbers all vertices).
+                int id = polygon.Points.Count == 0 ? 0 : polygon.Points.Max(p => p.id);
+
+                foreach (var v in newPoints)
+                {
+                    v.id = ++id;
+                }
+
                 noded.Points.AddRange(polygon.Points.Where(p => !merged.ContainsKey(p)));
                 noded.Points.AddRange(newPoints);
                 noded.Segments.AddRange(segments);
-                noded.Holes.AddRange(polygon.Holes);
-                noded.Regions.AddRange(polygon.Regions);
+
+                // A hole or region point inside a contour which collapsed (smaller than the
+                // tolerance) would now lie in the surrounding region: drop it.
+                bool Collapsed(Point p) => vanished.Any(e => DistanceToSegment(p, e.Item1, e.Item2) <= tolerance);
+
+                noded.Holes.AddRange(polygon.Holes.Where(h => !Collapsed(h)));
+                noded.Regions.AddRange(polygon.Regions.Where(r => !Collapsed(r.Point)));
 
                 result = noded;
             }
@@ -232,6 +253,12 @@ namespace TriangleNet.Meshing
                 {
                     // Exact duplicates are kept (handled by the triangulator).
                     merged[v] = target;
+
+                    // Keep the label of the merged vertex.
+                    if (target.label == 0 && v.label != 0)
+                    {
+                        target.label = v.label;
+                    }
                 }
             }
 
@@ -255,6 +282,12 @@ namespace TriangleNet.Meshing
         /// <summary>
         /// Find all pairs of segments that cross in their interiors (sweep along x-axis).
         /// </summary>
+        /// <remarks>
+        /// If the segments overlap less along the y-axis (e.g. many long horizontal segments,
+        /// which makes the x-sweep quadratic), the sweep runs along the y-axis. The pairs are
+        /// returned in the order of the x-sweep in any case (the order matters for merging
+        /// intersection points).
+        /// </remarks>
         private static List<(int, int)> FindCrossings(List<ISegment> segments, IPredicates predicates)
         {
             int n = segments.Count;
@@ -262,13 +295,74 @@ namespace TriangleNet.Meshing
             var order = new int[n];
             var xmin = new double[n];
 
+            double extentX = 0.0, extentY = 0.0;
+
             for (int i = 0; i < n; i++)
             {
+                var a = segments[i].GetVertex(0);
+                var b = segments[i].GetVertex(1);
+
                 order[i] = i;
-                xmin[i] = Math.Min(segments[i].GetVertex(0).x, segments[i].GetVertex(1).x);
+                xmin[i] = Math.Min(a.x, b.x);
+
+                extentX += Math.Abs(b.x - a.x);
+                extentY += Math.Abs(b.y - a.y);
             }
 
             Array.Sort((double[])xmin.Clone(), order);
+
+            if (extentY >= extentX)
+            {
+                return Sweep(segments, order, xmin, true, predicates);
+            }
+
+            var yorder = new int[n];
+            var ymin = new double[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                yorder[i] = i;
+                ymin[i] = Math.Min(segments[i].GetVertex(0).y, segments[i].GetVertex(1).y);
+            }
+
+            Array.Sort((double[])ymin.Clone(), yorder);
+
+            var crossings = Sweep(segments, yorder, ymin, false, predicates);
+
+            // Order of the x-sweep: by rank in the x-order of the first, then of the second segment.
+            var rank = new int[n];
+
+            for (int k = 0; k < n; k++)
+            {
+                rank[order[k]] = k;
+            }
+
+            for (int i = 0; i < crossings.Count; i++)
+            {
+                var (p, q) = crossings[i];
+
+                if (rank[p] > rank[q])
+                {
+                    crossings[i] = (q, p);
+                }
+            }
+
+            crossings.Sort((u, v) =>
+            {
+                int c = rank[u.Item1].CompareTo(rank[v.Item1]);
+                return c != 0 ? c : rank[u.Item2].CompareTo(rank[v.Item2]);
+            });
+
+            return crossings;
+        }
+
+        /// <summary>
+        /// Sweep along the x-axis (or y-axis) with the segments sorted by their minimum coordinate.
+        /// </summary>
+        private static List<(int, int)> Sweep(List<ISegment> segments, int[] order, double[] min,
+            bool alongX, IPredicates predicates)
+        {
+            int n = segments.Count;
 
             var crossings = new List<(int, int)>();
 
@@ -278,17 +372,20 @@ namespace TriangleNet.Meshing
                 var a = s.GetVertex(0);
                 var b = s.GetVertex(1);
 
-                double xmax = Math.Max(a.x, b.x);
-                double ymin = Math.Min(a.y, b.y);
-                double ymax = Math.Max(a.y, b.y);
+                double max = alongX ? Math.Max(a.x, b.x) : Math.Max(a.y, b.y);
+                double lo = alongX ? Math.Min(a.y, b.y) : Math.Min(a.x, b.x);
+                double hi = alongX ? Math.Max(a.y, b.y) : Math.Max(a.x, b.x);
 
-                for (int m = k + 1; m < n && xmin[order[m]] <= xmax; m++)
+                for (int m = k + 1; m < n && min[order[m]] <= max; m++)
                 {
                     var t = segments[order[m]];
                     var c = t.GetVertex(0);
                     var d = t.GetVertex(1);
 
-                    if (Math.Max(c.y, d.y) < ymin || Math.Min(c.y, d.y) > ymax)
+                    double tlo = alongX ? Math.Min(c.y, d.y) : Math.Min(c.x, d.x);
+                    double thi = alongX ? Math.Max(c.y, d.y) : Math.Max(c.x, d.x);
+
+                    if (thi < lo || tlo > hi)
                     {
                         continue;
                     }
@@ -431,21 +528,41 @@ namespace TriangleNet.Meshing
 
             // Endpoints (unordered) of all segments which are kept unchanged and of all new
             // segments, used to avoid duplicate new segments.
-            var existing = new HashSet<(Vertex, Vertex)>(new EdgeComparer());
+            // For new segments the Segment is stored (null for unchanged input segments).
+            var existing = new Dictionary<(Vertex, Vertex), (int Label, Segment Created)>(new EdgeComparer());
 
             for (int i = 0; i < segments.Count; i++)
             {
                 if (!splits.ContainsKey(i))
                 {
-                    existing.Add((segments[i].GetVertex(0), segments[i].GetVertex(1)));
+                    existing[(segments[i].GetVertex(0), segments[i].GetVertex(1))] = (segments[i].Label, null);
                 }
             }
 
             void AddNew(Vertex a, Vertex b, int label)
             {
-                if (existing.Add((a, b)))
+                if (!existing.TryGetValue((a, b), out var entry))
                 {
-                    result.Add(new Segment(a, b, label));
+                    var segment = new Segment(a, b, label);
+                    existing.Add((a, b), (label, segment));
+                    result.Add(segment);
+                }
+                else if (entry.Label == 0 && label != 0)
+                {
+                    // Coinciding pieces: a non-zero label wins (as in the mesher).
+                    if (entry.Created != null)
+                    {
+                        entry.Created.Label = label;
+                        existing[(a, b)] = (label, entry.Created);
+                    }
+                    else
+                    {
+                        // Unchanged input segment with label 0: add the piece, the mesher merges
+                        // duplicate segments and keeps the non-zero label.
+                        var segment = new Segment(a, b, label);
+                        existing[(a, b)] = (label, segment);
+                        result.Add(segment);
+                    }
                 }
             }
 
@@ -521,6 +638,15 @@ namespace TriangleNet.Meshing
             }
 
             return v;
+        }
+
+        private static double DistanceToSegment(Point p, Vertex a, Vertex b)
+        {
+            double dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+            double t = l2 == 0.0 ? 0.0 : Math.Max(0.0, Math.Min(1.0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+            double ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+
+            return Math.Sqrt(ex * ex + ey * ey);
         }
 
         private static bool SameLocation(Vertex a, Vertex b)

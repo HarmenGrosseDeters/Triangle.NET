@@ -8,6 +8,7 @@ namespace TriangleNet.Tools
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -56,6 +57,15 @@ namespace TriangleNet.Tools
                 i++;
             }
 
+            if (points.Contains(null))
+            {
+                // The checks below need all points.
+                return false;
+            }
+
+            // Segment endpoints must be polygon points (the mesh uses the point list).
+            var pointSet = new HashSet<Vertex>(points, ReferenceComparer.Instance);
+
             i = 0;
 
             foreach (var seg in poly.Segments)
@@ -79,14 +89,18 @@ namespace TriangleNet.Tools
                         "PolygonValidator.IsConsistent()");
                 }
 
+                if (!pointSet.Contains(p) || !pointSet.Contains(q))
+                {
+                    horrors++;
+                    logger.Warning(string.Format("Segment {0} has an endpoint which is not in the list of points.", i),
+                        "PolygonValidator.IsConsistent()");
+                }
+
                 i++;
             }
 
-            if (points[0].id == points[1].id)
-            {
-                horrors += CheckVertexIDs(poly, count);
-            }
-            else
+            // User defined ids (not all equal) must be unique.
+            if (points.Any(v => v.id != points[0].id))
             {
                 horrors += CheckDuplicateIDs(poly);
             }
@@ -244,39 +258,13 @@ namespace TriangleNet.Tools
             return (a.x - b.x) * (c.y - b.y) - (a.y - b.y) * (c.x - b.x);
         }
 
-        private static int CheckVertexIDs(IPolygon poly, int count)
+        private sealed class ReferenceComparer : IEqualityComparer<Vertex>
         {
-            var logger = Log.Instance;
+            public static readonly ReferenceComparer Instance = new ReferenceComparer();
 
-            int horrors = 0;
+            public bool Equals(Vertex a, Vertex b) => ReferenceEquals(a, b);
 
-            int i = 0;
-
-            Vertex p, q;
-
-            foreach (var seg in poly.Segments)
-            {
-                p = seg.GetVertex(0);
-                q = seg.GetVertex(1);
-
-                if (p.id < 0 || p.id >= count)
-                {
-                    horrors++;
-                    logger.Warning(string.Format("Segment {0} has invalid start point.", i),
-                        "PolygonValidator.IsConsistent()");
-                }
-
-                if (q.id < 0 || q.id >= count)
-                {
-                    horrors++;
-                    logger.Warning(string.Format("Segment {0} has invalid endpoint.", i),
-                        "PolygonValidator.IsConsistent()");
-                }
-
-                i++;
-            }
-
-            return horrors;
+            public int GetHashCode(Vertex v) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(v);
         }
 
         private static int CheckDuplicateIDs(IPolygon poly)

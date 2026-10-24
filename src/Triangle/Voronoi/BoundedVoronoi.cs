@@ -15,6 +15,12 @@ namespace TriangleNet.Voronoi
     /// <summary>
     /// Computing the bounded Voronoi diagram of a constrained and conforming Delaunay triangulation.
     /// </summary>
+    /// <remarks>
+    /// The mesh must be conforming Delaunay (<see cref="Meshing.ConstraintOptions.ConformingDelaunay"/>):
+    /// only then the circumcenters of all triangles lie inside the domain or just beyond their
+    /// own boundary edge. For a constrained (non-conforming) triangulation, cells may extend
+    /// beyond the domain and overlap.
+    /// </remarks>
     public class BoundedVoronoi : VoronoiBase
     {
         int offset;
@@ -105,13 +111,12 @@ namespace TriangleNet.Voronoi
             // Let the face edge point to the edge leaving at generator.
             edge.face.edge = h2;
 
+            // Ids are the indices in the list.
+            h1.id = edges.Count;
+            h2.id = edges.Count + 1;
+
             edges.Add(h1);
             edges.Add(h2);
-
-            int count = edges.Count;
-
-            h1.id = count;
-            h2.id = count + 1;
 
             gen.id = offset++;
             vertices.Add(gen);
@@ -169,9 +174,9 @@ namespace TriangleNet.Voronoi
             // Let the face edge point to the edge leaving at generator.
             edge.face.edge = he;
 
-            edges.Add(he);
-
             he.id = edges.Count;
+
+            edges.Add(he);
 
             gen.id = offset++;
             vertices.Add(gen);

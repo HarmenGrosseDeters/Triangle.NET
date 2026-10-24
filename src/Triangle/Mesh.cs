@@ -1621,7 +1621,9 @@ namespace TriangleNet
                 // the resulting triangles.
                 deltri.Onext(ref firstedge);
                 deltri.Oprev(ref lastedge);
-                TriangulatePolygon(firstedge, lastedge, edgecount, false, behavior.NoBisect == 0);
+                // The new triangles are always tested for quality (the original code skipped
+                // that if segment splitting was restricted, leaving e.g. too large triangles).
+                TriangulatePolygon(firstedge, lastedge, edgecount, false, true);
             }
             // Splice out two triangles.
             deltri.Lprev(ref deltriright);
@@ -1645,10 +1647,7 @@ namespace TriangleNet
             // Set the new origin of 'deltri' and check its quality.
             neworg = lefttri.Org();
             deltri.SetOrg(neworg);
-            if (behavior.NoBisect == 0)
-            {
-                qualityMesher.TestTriangle(ref deltri);
-            }
+            qualityMesher.TestTriangle(ref deltri);
 
             // Delete the two spliced-out triangles.
             TriangleDealloc(lefttri.tri);

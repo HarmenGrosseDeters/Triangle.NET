@@ -54,6 +54,13 @@ namespace TriangleNet.Meshing
             int elements = triangles == null ? 0 : triangles.Length;
             int segments = polygon.Segments.Count;
 
+            // The triangle corners are indices into the list of points, and the reconstruction
+            // uses vertex ids as indices: number the vertices by their position.
+            for (int i = 0; i < polygon.Points.Count; i++)
+            {
+                polygon.Points[i].id = i;
+            }
+
             var mesh = new Mesh(config ?? new Configuration(), polygon.Points);
 
             mesh.regions.AddRange(polygon.Regions);
@@ -405,8 +412,8 @@ namespace TriangleNet.Meshing
             // Count half-edges (edge ids).
             int k = 0;
 
-            // Maps a vertex to its leaving boundary edge.
-            var boundary = new Dictionary<int, HalfEdge>();
+            // Boundary half-edges (on the outer face).
+            var boundary = new List<HalfEdge>();
 
             foreach (var t in mesh.triangles)
             {
@@ -441,7 +448,7 @@ namespace TriangleNet.Meshing
                         }
                         else
                         {
-                            boundary.Add(dest.id, twin);
+                            boundary.Add(twin);
                         }
 
                         // Set leaving edges.
@@ -481,10 +488,26 @@ namespace TriangleNet.Meshing
                 }
             }
 
-            // Resolve boundary edges.
-            foreach (var e in boundary.Values)
+            // Resolve boundary edges: the successor leaves the end vertex along the boundary.
+            // Rotate around that vertex until the boundary is reached (a lookup by vertex fails
+            // if two boundary edges leave the same vertex, e.g. at a hole touching the boundary).
+            foreach (var e in boundary)
             {
-                e.next = boundary[e.twin.origin.id];
+                var current = e.twin;
+
+                while (true)
+                {
+                    // Previous edge in the (triangular) face: it enters the end vertex of e.
+                    var entering = current.next.next;
+
+                    if (entering.twin.face == Face.Empty)
+                    {
+                        e.next = entering.twin;
+                        break;
+                    }
+
+                    current = entering.twin;
+                }
             }
 
             dcel.Vertices.AddRange(vertices);
