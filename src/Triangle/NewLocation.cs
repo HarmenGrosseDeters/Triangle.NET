@@ -27,6 +27,25 @@ namespace TriangleNet
         Mesh mesh;
         Behavior behavior;
 
+        // Vertices created by relocation. They are not relocated again, otherwise the same
+        // vertex can be moved back and forth forever without refining the mesh.
+        readonly System.Collections.Generic.HashSet<Vertex> relocatedVertices = new System.Collections.Generic.HashSet<Vertex>();
+
+        /// <summary>
+        /// Gets a value indicating whether the last call to <see cref="FindLocation"/> deleted
+        /// a vertex of the triangle to relocate it (the returned location is the new position
+        /// of the deleted vertex, and the triangle doesn't exist anymore).
+        /// </summary>
+        internal bool Relocated { get; private set; }
+
+        /// <summary>
+        /// Mark a vertex inserted at a relocated position.
+        /// </summary>
+        internal void MarkRelocated(Vertex v)
+        {
+            relocatedVertices.Add(v);
+        }
+
         // Work arrays for wegde intersection
         double[] petalx = new double[20];
         double[] petaly = new double[20];
@@ -66,6 +85,8 @@ namespace TriangleNet
         public Point FindLocation(Vertex org, Vertex dest, Vertex apex,
             ref double xi, ref double eta, bool offcenter, Otri badotri)
         {
+            Relocated = false;
+
             // Based on using -U switch, call the corresponding function
             if (behavior.MaxAngle == 0.0)
             {
@@ -390,6 +411,7 @@ namespace TriangleNet
                 if (relocated > 0)
                 {
                     Statistic.RelocationCount++;
+                    Relocated = true;
 
                     dx = newloc[0] - torg.x;
                     dy = newloc[1] - torg.y;
@@ -1090,6 +1112,7 @@ namespace TriangleNet
                 if (relocated > 0)
                 {
                     Statistic.RelocationCount++;
+                    Relocated = true;
 
                     dx = newloc[0] - torg.x;
                     dy = newloc[1] - torg.y;
@@ -2067,7 +2090,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (torg.type == VertexType.FreeVertex && numpoints_p != 0 && ValidPolygonAngles(numpoints_p, points_p))
+            if (torg.type == VertexType.FreeVertex && !relocatedVertices.Contains(torg) && numpoints_p != 0 && ValidPolygonAngles(numpoints_p, points_p))
             {
                 //newLocFound = getPetalIntersection(m, b, numpoints_p, points_p, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_p, points_p, newloc,torg[0],torg[1]);
@@ -2112,7 +2135,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (tdest.type == VertexType.FreeVertex && numpoints_q != 0 && ValidPolygonAngles(numpoints_q, points_q))
+            if (tdest.type == VertexType.FreeVertex && !relocatedVertices.Contains(tdest) && numpoints_q != 0 && ValidPolygonAngles(numpoints_q, points_q))
             {
                 //newLocFound = getPetalIntersection(m, b,numpoints_q, points_q, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_q, points_q, newloc,tapex[0],tapex[1]);
@@ -2158,7 +2181,7 @@ namespace TriangleNet
             // 	m.counterclockcount--;
             // INTERSECTION OF PETALS
             // first check whether the star angles are appropriate for relocation
-            if (tapex.type == VertexType.FreeVertex && numpoints_r != 0 && ValidPolygonAngles(numpoints_r, points_r))
+            if (tapex.type == VertexType.FreeVertex && !relocatedVertices.Contains(tapex) && numpoints_r != 0 && ValidPolygonAngles(numpoints_r, points_r))
             {
                 //newLocFound = getPetalIntersection(m, b,numpoints_r, points_r, newloc);
                 //newLocFound = getPetalIntersectionBruteForce(m, b,numpoints_r, points_r, newloc,tdest[0],tdest[1]);

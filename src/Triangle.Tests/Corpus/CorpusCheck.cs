@@ -66,6 +66,7 @@ namespace TriangleNet.Tests.Corpus
             double scale = Math.Max(mag + w, Math.Max(b.Width, b.Height) + 2 * w);
 
             Mesh mesh;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
 
             try
             {
@@ -81,6 +82,8 @@ namespace TriangleNet.Tests.Corpus
                 var ex = e.GetBaseException();
                 return "EXCEPTION " + ex.GetType().Name + ": " + ex.Message;
             }
+
+            watch.Stop();
 
             if (!MeshValidator.IsConsistent(mesh))
             {
@@ -117,7 +120,27 @@ namespace TriangleNet.Tests.Corpus
                 return $"SEGMENTS_MISSING {missing}";
             }
 
-            return $"OK triangles={mesh.Triangles.Count}";
+            // Quality statistics (no failure: small input angles can't be fixed, and the
+            // Steiner point limit may stop the refinement).
+            int bad = minAngle > 0 ? mesh.Triangles.Count(t => MinimumAngle(t) < minAngle - 0.01) : 0;
+            bool limit = minAngle > 0 && mesh.Vertices.Count - poly.Points.Count >= steinerPoints;
+
+            return $"OK triangles={mesh.Triangles.Count} ms={watch.ElapsedMilliseconds} bad={bad} limit={(limit ? 1 : 0)}";
+        }
+
+        private static double MinimumAngle(Topology.Triangle t)
+        {
+            double min = 180;
+
+            for (int i = 0; i < 3; i++)
+            {
+                Point a = t.GetVertex(i), b = t.GetVertex((i + 1) % 3), c = t.GetVertex((i + 2) % 3);
+                double ux = b.X - a.X, uy = b.Y - a.Y, vx = c.X - a.X, vy = c.Y - a.Y;
+                double angle = Math.Atan2(Math.Abs(ux * vy - uy * vx), ux * vx + uy * vy) * 180 / Math.PI;
+                min = Math.Min(min, angle);
+            }
+
+            return min;
         }
 
         private static bool IsCovered(List<(Point, Point)> subsegs, Point p0, Point p1, double tol)

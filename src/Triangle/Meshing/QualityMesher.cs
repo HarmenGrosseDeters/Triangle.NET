@@ -743,15 +743,21 @@ namespace TriangleNet.Meshing
             if (!Otri.IsDead(badotri.tri) && (borg == badtri.org) &&
                 (bdest == badtri.dest) && (bapex == badtri.apex))
             {
-                // If the aCute location coincides with an existing vertex, fall back to
-                // the circumcenter (classic Delaunay refinement).
+                // If the aCute location coincides with an existing vertex, or if it doesn't
+                // destroy the bad triangle (the aCute location may lie outside the
+                // circumcircle, so e.g. a too large triangle would remain and never be
+                // tested again), fall back to the circumcenter (classic Delaunay refinement).
+                bool survived = false;
+                bool relocated = false;
+
                 for (int attempt = 0; attempt < 2; attempt++)
                 {
                     bool useAcute = enableAcute && attempt == 0;
 
                     if (attempt > 0)
                     {
-                        if (!errorflag || !enableAcute)
+                        // After a relocation the bad triangle doesn't exist anymore.
+                        if (!(errorflag || survived) || !enableAcute || relocated)
                         {
                             break;
                         }
@@ -762,11 +768,22 @@ namespace TriangleNet.Meshing
 
                     errorflag = false;
                     // Create a new vertex at the triangle's circumcenter.
+                    newloc = null;
+
                     if (useAcute)
                     {
                         newloc = newLocation.FindLocation(borg, bdest, bapex, ref xi, ref eta, true, badotri);
+                        relocated = newLocation.Relocated;
+
+                        // A relocation already deleted a vertex, so the location must be used.
+                        if (!relocated && !IsAcuteLocationValid(borg, bdest, bapex, newloc))
+                        {
+                            useAcute = false;
+                            newloc = null;
+                        }
                     }
-                    else
+
+                    if (newloc == null)
                     {
                         newloc = predicates.FindCircumcenter(borg, bdest, bapex, ref xi, ref eta, behavior.offconstant);
                     }
@@ -843,6 +860,13 @@ namespace TriangleNet.Meshing
                             {
                                 mesh.steinerleft--;
                             }
+
+                            if (relocated)
+                            {
+                                newLocation.MarkRelocated(newvertex);
+                            }
+
+                            survived = useAcute && !relocated && mesh.steinerleft != 0 && IsAlive(badtri);
                         }
                         else if (success == InsertVertexResult.Encroaching)
                         {
@@ -878,6 +902,43 @@ namespace TriangleNet.Meshing
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Returns true, if the aCute location can be used to refine the triangle: it must lie
+        /// strictly inside the circumcircle (otherwise inserting it doesn't destroy the triangle)
+        /// and not (almost) on one of the triangle's vertices (otherwise it creates degenerate
+        /// triangles, which are refined again and again).
+        /// </summary>
+        private bool IsAcuteLocationValid(Vertex org, Vertex dest, Vertex apex, Point p)
+        {
+            if (p == null || double.IsNaN(p.x) || double.IsNaN(p.y) ||
+                predicates.InCircle(org, dest, apex, p) <= 0.0)
+            {
+                return false;
+            }
+
+            double shortest = Math.Min(Distance2(org, dest), Math.Min(Distance2(dest, apex), Distance2(apex, org)));
+            double tolerance = 1e-4 * shortest;
+
+            return Distance2(p, org) > tolerance && Distance2(p, dest) > tolerance && Distance2(p, apex) > tolerance;
+        }
+
+        private static double Distance2(Point a, Point b)
+        {
+            double dx = a.x - b.x, dy = a.y - b.y;
+            return dx * dx + dy * dy;
+        }
+
+        /// <summary>
+        /// Returns true, if the triangle still exists (unchanged).
+        /// </summary>
+        private static bool IsAlive(BadTriangle badtri)
+        {
+            var tri = badtri.poortri;
+
+            return !Otri.IsDead(tri.tri) && tri.Org() == badtri.org &&
+                tri.Dest() == badtri.dest && tri.Apex() == badtri.apex;
         }
 
         /// <summary>

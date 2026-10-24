@@ -26,6 +26,7 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
     ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
+    ///   TRIANGLE_CORPUS_ANGLES comma separated minimum angles (default 0,20; 0 = no quality)
     ///
     /// Run: dotnet test --filter TestCategory=Corpus
     /// </remarks>
@@ -134,7 +135,7 @@ namespace TriangleNet.Tests.Corpus
 
             var results = new ConcurrentBag<(string Name, double MinAngle, string Result)>();
 
-            var jobs = files.SelectMany(f => new[] { (f, 0.0), (f, 20.0) });
+            var jobs = files.SelectMany(f => Angles().Select(a => (f, a)));
 
             Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, job =>
             {
@@ -161,6 +162,20 @@ namespace TriangleNet.Tests.Corpus
                 TestContext.Out.WriteLine($"  min angle {g.Key.MinAngle}: {g.Key.Item2} x {g.Count()}");
             }
 
+            foreach (var g in results.Where(r => r.Result.StartsWith("OK")).GroupBy(r => r.MinAngle).OrderBy(g => g.Key))
+            {
+                var stats = g.Select(r => (r.Name, Stats: Stats(r.Result))).ToList();
+
+                TestContext.Out.WriteLine($"  min angle {g.Key}: total {stats.Sum(r => r.Stats["ms"]) / 1000:F1} s, " +
+                    $"{stats.Sum(r => r.Stats["triangles"])} triangles, Steiner limit reached x {stats.Count(r => r.Stats["limit"] > 0)}, " +
+                    $"cases with bad triangles x {stats.Count(r => r.Stats["bad"] > 0)}");
+
+                foreach (var r in stats.OrderByDescending(r => r.Stats["ms"]).Take(5))
+                {
+                    TestContext.Out.WriteLine($"    slow: {r.Name} {r.Stats["ms"]} ms, {r.Stats["triangles"]} triangles, bad {r.Stats["bad"]}");
+                }
+            }
+
             foreach (var f in failures)
             {
                 TestContext.Out.WriteLine($"  {f.Name} (min angle {f.MinAngle}): {f.Result}");
@@ -168,6 +183,14 @@ namespace TriangleNet.Tests.Corpus
 
             Assert.That(failures, Is.Empty, string.Join("\n", failures.Take(50).Select(f => $"{f.Name} (min angle {f.MinAngle}): {f.Result}")));
         }
+
+        private static Dictionary<string, long> Stats(string result) =>
+            result.Split(' ').Select(t => t.Split('=')).Where(t => t.Length == 2)
+                .ToDictionary(t => t[0], t => long.Parse(t[1], CultureInfo.InvariantCulture));
+
+        private static double[] Angles() =>
+            (Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_ANGLES") ?? "0,20").Split(',')
+                .Select(a => double.Parse(a, CultureInfo.InvariantCulture)).ToArray();
 
         private static double SnapTolerance() =>
             double.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_SNAP"), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0.0;
