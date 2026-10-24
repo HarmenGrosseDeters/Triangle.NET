@@ -27,6 +27,9 @@ namespace TriangleNet.Meshing.Data
         // Variables that maintain the bad triangle queues.  The queues are
         // ordered from 4095 (highest priority) to 0 (lowest priority).
         BadTriangle[] queuefront;
+
+        // Released bad triangles for reuse.
+        readonly System.Collections.Generic.Stack<BadTriangle> free = new System.Collections.Generic.Stack<BadTriangle>();
         BadTriangle[] queuetail;
         int[] nextnonemptyq;
         int firstnonemptyq;
@@ -151,8 +154,8 @@ namespace TriangleNet.Meshing.Data
         /// <param name="dest"></param>
         public void Enqueue(ref Otri enqtri, double minedge, Vertex apex, Vertex org, Vertex dest)
         {
-            // Allocate space for the bad triangle.
-            BadTriangle newbad = new BadTriangle();
+            // Allocate space for the bad triangle (or reuse a released one).
+            BadTriangle newbad = free.Count > 0 ? free.Pop() : new BadTriangle();
 
             newbad.poortri = enqtri;
             newbad.key = minedge;
@@ -161,6 +164,18 @@ namespace TriangleNet.Meshing.Data
             newbad.dest = dest;
 
             Enqueue(newbad);
+        }
+
+        /// <summary>
+        /// Return a dequeued bad triangle, which is no longer used, for reuse.
+        /// </summary>
+        public void Release(BadTriangle badtri)
+        {
+            badtri.poortri = default(Otri);
+            badtri.org = badtri.dest = badtri.apex = null;
+            badtri.next = null;
+
+            free.Push(badtri);
         }
 
         /// <summary>

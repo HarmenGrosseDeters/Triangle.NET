@@ -1045,6 +1045,10 @@ namespace TriangleNet.Meshing
                         // Record any new bad triangles that result.
                         SplitEncSegs(true);
                     }
+                    else
+                    {
+                        queue.Release(badtri);
+                    }
                 }
             }
 
