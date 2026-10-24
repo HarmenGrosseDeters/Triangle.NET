@@ -879,12 +879,14 @@ namespace TriangleNet.Meshing
                         int queued = badsubsegs.Count;
                         bool encroaches = EncroachesBeforeInsertion(newvertex, badotri);
 
-                        if (encroaches && badsubsegs.Count == queued && !refusedAtPrecisionLimit)
+                        if (encroaches && badsubsegs.Count == queued && (!refusedAtPrecisionLimit || gridSize > 0.0))
                         {
                             // Only subsegments which must not be split are encroached (segment
-                            // splitting disabled, locked segments). Rejecting the vertex would
+                            // splitting disabled, locked segments, or with a grid subsegments
+                            // where no grid point is a valid split). Rejecting the vertex would
                             // drop the bad triangle for good, so it is inserted anyway: it lies
-                            // inside the domain, only the subsegment can't be split.
+                            // inside the domain, only the subsegment can't be split. (At the
+                            // precision limit without a grid, this would refine forever.)
                             encroaches = false;
                             success = mesh.InsertVertex(newvertex, ref badotri, ref tmp, false, true);
                         }

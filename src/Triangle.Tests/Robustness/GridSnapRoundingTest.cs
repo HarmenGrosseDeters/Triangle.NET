@@ -159,6 +159,41 @@ namespace TriangleNet.Tests.Robustness
             Assert.That(locked[0].GetVertex(0).X + locked[0].GetVertex(1).X, Is.EqualTo(10.0));
         }
 
+        [TestCase(1)]
+        [TestCase(2)]
+        [TestCase(3)]
+        public void NoLargeBadTrianglesRemain(int seed)
+        {
+            // Subsegments where no grid point is a valid split must not stop the refinement of
+            // large triangles nearby (their circumcenter encroaches upon the subsegment).
+            var poly = RandomSegments(seed, 30, 10.0);
+
+            var mesh = (Mesh)MeshAssert.Terminates(() => new GenericMesher().Triangulate(poly,
+                new ConstraintOptions { GridSize = Grid }, new QualityOptions { MinimumAngle = 30 }));
+
+            MeshAssert.IsValid(mesh);
+
+            var segments = new HashSet<(int, int)>(mesh.Segments.Select(s => (Math.Min(s.P0, s.P1), Math.Max(s.P0, s.P1))));
+
+            bool OnSegment(ITriangle t) => Enumerable.Range(0, 3).Any(i =>
+            {
+                int a = t.GetVertexID(i), b = t.GetVertexID((i + 1) % 3);
+                return segments.Contains((Math.Min(a, b), Math.Max(a, b)));
+            });
+
+            double Shortest(ITriangle t) => Enumerable.Range(0, 3).Min(i =>
+            {
+                var a = t.GetVertex(i);
+                var b = t.GetVertex((i + 1) % 3);
+                return Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+            });
+
+            int large = mesh.Triangles.Count(t => Characterization.MeshInvariants.MinimumAngle(t) < 29.99 &&
+                Shortest(t) > 20 * Grid && !OnSegment(t));
+
+            Assert.That(large, Is.EqualTo(0));
+        }
+
         internal static int CountFlippedAfterRounding(Mesh mesh, double g)
         {
             var predicates = new RobustPredicates();
