@@ -69,14 +69,36 @@ namespace TriangleNet.Meshing
 
             var predicates = m.predicates;
 
-            // The triangles around each vertex.
-            var star = new Dictionary<int, List<Triangle>>();
+            // Vertices off the grid (usually few: Steiner points are already on the grid).
+            var off = new Dictionary<int, Vertex>();
+
+            foreach (var v in m.vertices.Values)
+            {
+                if (v.type != VertexType.UndeadVertex &&
+                    (Round(v.x, gridSize) != v.x || Round(v.y, gridSize) != v.y))
+                {
+                    off.Add(v.hash, v);
+                }
+            }
+
+            if (off.Count == 0)
+            {
+                return 0;
+            }
+
+            // The triangles around each of these vertices.
+            var star = new Dictionary<int, List<Triangle>>(off.Count);
 
             foreach (var t in m.triangles)
             {
                 for (int i = 0; i < 3; i++)
                 {
                     var v = t.vertices[i];
+
+                    if (!off.ContainsKey(v.hash))
+                    {
+                        continue;
+                    }
 
                     if (!star.TryGetValue(v.hash, out var list))
                     {
@@ -90,26 +112,16 @@ namespace TriangleNet.Meshing
 
             int failed = 0;
 
-            foreach (var v in m.vertices.Values)
+            foreach (var v in off.Values)
             {
-                if (v.type == VertexType.UndeadVertex)
-                {
-                    continue;
-                }
-
-                double rx = Round(v.x, gridSize);
-                double ry = Round(v.y, gridSize);
-
-                if (rx == v.x && ry == v.y)
-                {
-                    continue;
-                }
-
                 if (!star.TryGetValue(v.hash, out var triangles))
                 {
                     // Not part of the mesh.
                     continue;
                 }
+
+                double rx = Round(v.x, gridSize);
+                double ry = Round(v.y, gridSize);
 
                 if (!TryMove(v, rx, ry, triangles, predicates) && !TryCellCorners(v, rx, ry, gridSize, triangles, predicates))
                 {
