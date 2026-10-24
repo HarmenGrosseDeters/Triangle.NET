@@ -14,7 +14,8 @@ Eingaben und Gleitkomma-Grenzfällen.
 > und [Absicherung für Performance-Arbeit](#absicherung-für-performance-arbeit-srctriangletestscharacterization).
 >
 > **Dritte Runde (Raster, Keile, Gelände):** Die 1,1 % gelten für die ungerundeten Koordinaten.
-> Nach dem Runden auf cm sind es 6–10 %, und rund 1 % der Dreiecke kippt. Neu sind Snap-Rounding
+> Nach dem Runden auf cm sind es 6–10 %, und rund 1 % der Dreiecke kippt. Mit Raster und
+> Keil-Toleranz sind es 2,2 % ohne gekippte Dreiecke. Neu sind Snap-Rounding
 > auf das Ausgaberaster (`GridSize`), das Zusammenführen dünner Keile (`WedgeTolerance`) und eine
 > TIN-Vereinfachung für DGM-Raster (`TerrainSimplifier`), siehe
 > [Raster, Keile und Geländevereinfachung](#raster-keile-und-geländevereinfachung).
@@ -367,33 +368,47 @@ dem Runden auf cm**:
 | Variante | schlechte Dreiecke 20° / 30° | gekippte Dreiecke 20° / 30° | Dreiecke 30° |
 |----------|-----------------------------|-----------------------------|--------------|
 | bisher | 6,13 % / 9,55 % | 33.858 / 92.501 (in 133 / 148 Kacheln) | 7,18 Mio. |
-| Raster 1 cm | 6,78 % / 7,19 % | 0 / 0 | 5,88 Mio. |
+| Raster 1 cm | 2,91 % / 2,73 % | 0 / 0 | 6,83 Mio. |
 | Keil 3 cm | 3,72 % / 6,44 % | 5.208 / 13.166 | 6,21 Mio. |
-| **Raster 1 cm + Keil 3 cm** | **5,28 % / 6,02 %** | **0 / 0** | 5,80 Mio. |
+| **Raster 1 cm + Keil 3 cm** | **2,22 % / 2,22 %** | **0 / 0** | 6,59 Mio. |
 
 Ohne Rundung gemessen hätte „bisher“ 1,10 % / 0,98 %. Das ist aber nicht das Netz, das beim
 Nutzer ankommt. Der Fallback-Adapter im alten Repo nutzt jetzt Raster (Rundungsgenauigkeit) und
 Keil-Toleranz (dreifache Snap-Toleranz) als Standard.
 
-Grenze: Auch mit Raster bleiben gut 5 % schlechte Dreiecke. Sie liegen in Keilen, die schmaler als
-zwei Rasterzellen sind. Dort lässt sich mit Punkten auf dem Raster kein guter Winkel erreichen,
-und gerundete Teilungspunkte neben sehr dünnen Dreiecken sind oft ungültig. Größere Toleranzen
-helfen, sind aber eine Datenentscheidung.
+Die wichtigste Korrektur im Rastermodus: Teilsegmente, bei denen kein Rasterpunkt eine gültige
+Teilung ergibt, sind häufig (neben sehr dünnen Dreiecken). Dreiecke, deren Umkreismittelpunkt ein
+solches Teilsegment bedrängte, wurden bisher dauerhaft verworfen. So blieben schlechte Dreiecke
+mit bis zu 40 m Kantenlänge stehen. Jetzt wird der Punkt trotzdem eingefügt, wie bei gesperrten
+Kanten (die Raster-Untergrenze verhindert eine Kaskade). Damit sank der Anteil von 5,3 % / 6,0 %
+auf 2,2 % / 2,2 %; die Laufzeit stieg um etwa ein Drittel (15 % mehr Dreiecke).
+
+Die übrigen schlechten Dreiecke liegen an Segmenten im Bereich 2–5 cm und in echten
+Eingabekeilen. Dort lässt sich mit Punkten auf einem cm-Raster kein guter Winkel erreichen.
+Größere Toleranzen helfen, sind aber eine Datenentscheidung. Ausprobiert und verworfen: den
+Abschnitt eines langen Keils zusammenführen, auf dem die Linien näher als die Toleranz liegen. Die
+Keilspitze wandert dabei nur, der kleine Winkel bleibt; auf den Herne-Kacheln war das neutral bis
+leicht schlechter.
 
 **TIN-Vereinfachung (`Tools.TerrainSimplifier.Select`).** Wählt aus einem dichten DGM die Punkte
 aus, deren Triangulierung alle Punkte mit einem vertikalen Fehler unter der Schranke
 wiedergibt: Greedy Insertion nach Garland/Heckbert, wahlweise mit Bruchkanten. Pro Runde wird in
 jedem Dreieck der schlechteste Punkt eingefügt, sofern sein Fehler mindestens halb so groß ist
 wie der größte Fehler. Das spart gegenüber „alle auf einmal“ etwa 14 % Punkte. Eingefügt wird
-inkrementell, und nur Punkte in geänderten Dreiecken werden neu lokalisiert (Max-Heap). Da die
-Delaunay-Triangulation von Rasterpunkten nicht eindeutig ist (kozirkulär), wird zum Schluss gegen
-eine neu aufgebaute Triangulierung geprüft und bei Bedarf nachgebessert.
+inkrementell, und nur Punkte in geänderten Dreiecken werden neu lokalisiert (Max-Heap).
+
+Die Delaunay-Triangulation von Rasterpunkten ist nicht eindeutig (kozirkuläre Punkte), eine neu
+aufgebaute Triangulierung kann also andere Diagonalen wählen – in flachen Bereichen mit wenigen
+Punkten mit Fehlern über 2 m. Deshalb wird der Fehler für jede kozirkuläre Gruppe über alle
+Dreiecke aus ihren Punkten bewertet (jedes davon kommt in irgendeiner Delaunay-Triangulierung
+vor). Die Schranke gilt damit für jede Delaunay-Triangulierung der Auswahl; eine abschließende
+Prüfung gegen eine neu aufgebaute Triangulierung bestätigt das.
 
 | DGM1 Herne, 1 Mio. Punkte | ausgewählt | Laufzeit | danach Qualitätsnetz 30° |
 |---------------------------|------------|----------|--------------------------|
-| Fehler ≤ 20 cm | 34.900 (3,5 %) | 8 s | 74.600 Punkte, 1 s |
-| Fehler ≤ 10 cm | 104.300 (10,4 %) | 17 s | 183.000 Punkte, 2 s |
-| Fehler ≤ 5 cm | 268.000 (26,8 %) | 57 s | 393.000 Punkte, 4 s |
+| Fehler ≤ 20 cm | 35.700 (3,6 %) | 11 s | ca. 75.000 Punkte, 1 s |
+| Fehler ≤ 10 cm | 106.100 (10,6 %) | 16 s | ca. 183.000 Punkte, 2 s |
+| Fehler ≤ 5 cm | 268.400 (26,8 %) | 28 s | ca. 393.000 Punkte, 4 s |
 
 Datenabhängige Triangulierung (Kantenflips nach Geländeform) wurde bewusst nicht umgesetzt: Sie
 erzeugt schmale Dreiecke und widerspricht damit dem Ziel der Qualitätsvermaschung.

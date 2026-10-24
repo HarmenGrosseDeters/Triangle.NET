@@ -163,7 +163,14 @@ namespace TriangleNet.Tools
             var tri = default(Otri);
 
             var changed = new HashSet<Triangle>();
-            var created = new List<Bucket>();
+
+            // Cocircular vertices around a triangle (cache for one pass).
+            var clusters = new Dictionary<Triangle, Vertex[]>();
+            var touched = new HashSet<Bucket>();
+
+            // Errors equal to the maximum (up to roundoff, which depends on the order of the
+            // triangle's vertices) are fine.
+            double bound = maxError * (1.0 + 1e-10);
             var queue = new BucketQueue();
 
             // Set if the mesh was built from scratch (no insertions since).
@@ -206,14 +213,13 @@ namespace TriangleNet.Tools
                     }
                     else
                     {
-                        error = Math.Abs(Interpolate(tri.tri, p.x, p.y, Z) - heights[i]);
+                        error = Error(mesh, tri.tri, p, heights[i], Z, clusters);
                     }
 
                     if (!buckets.TryGetValue(tri.tri, out var bucket))
                     {
                         bucket = new Bucket(tri.tri);
                         buckets.Add(tri.tri, bucket);
-                        created.Add(bucket);
                     }
 
                     bucket.Points.Add(i);
@@ -222,24 +228,28 @@ namespace TriangleNet.Tools
                     {
                         bucket.Error = error;
                         bucket.Worst = i;
+
+                        // Also existing buckets (unchanged triangles) may get a larger error.
+                        touched.Add(bucket);
                     }
                 }
 
                 pending.Clear();
+                clusters.Clear();
 
-                foreach (var bucket in created)
+                foreach (var bucket in touched)
                 {
-                    if (bucket.Error > maxError)
+                    if (bucket.Error > bound)
                     {
-                        queue.Push(bucket);
+                        queue.Update(bucket);
                     }
                 }
 
-                created.Clear();
+                touched.Clear();
 
                 double max = queue.Count > 0 ? queue.Peek().Error : 0.0;
 
-                if (max <= maxError)
+                if (max <= bound)
                 {
                     if (fresh)
                     {
@@ -290,7 +300,7 @@ namespace TriangleNet.Tools
 
                 // Insert the worst points first (closer to the result of strictly greedy
                 // insertion, which selects fewer points than inserting all at once).
-                double limit = polishing ? maxError : Math.Max(maxError, 0.5 * max);
+                double limit = polishing ? bound : Math.Max(bound, 0.5 * max);
 
                 var insert = new List<(Triangle, int)>();
 
@@ -322,11 +332,44 @@ namespace TriangleNet.Tools
                     }
                 }
 
+                // The cocircular neighbors of a triangle (see Error()) may have changed, too.
+                var ring = new List<Triangle>();
+                var edge = default(Otri);
+                var sym = default(Otri);
+
+                foreach (var t in changed)
+                {
+                    edge.tri = t;
+
+                    for (edge.orient = 0; edge.orient < 3; edge.orient++)
+                    {
+                        edge.Sym(ref sym);
+
+                        if (sym.tri.id != Mesh.DUMMY)
+                        {
+                            ring.Add(sym.tri);
+                        }
+                    }
+                }
+
+                changed.UnionWith(ring);
+
+                // ... and all triangles cocircular with them.
+                foreach (var t in changed.ToList())
+                {
+                    var cluster = CocircularTriangles(mesh, t);
+
+                    if (cluster != null)
+                    {
+                        changed.UnionWith(cluster);
+                    }
+                }
+
                 // Points of triangles which changed are located again.
                 foreach (var t in changed)
                 {
-                    if (buckets.TryGetValue(t, out var bucket) &&
-                        (Otri.IsDead(t) || isSelected[bucket.Worst] || !bucket.Key.Equals(new TriangleKey(t))))
+                    // Also unchanged triangles: their cocircular neighbors may have changed.
+                    if (buckets.TryGetValue(t, out var bucket))
                     {
                         buckets.Remove(t);
                         queue.Remove(bucket);
@@ -380,6 +423,21 @@ namespace TriangleNet.Tools
                 }
 
                 heap.Clear();
+            }
+
+            /// <summary>
+            /// Add the bucket, or move it up after its error increased.
+            /// </summary>
+            public void Update(Bucket b)
+            {
+                if (b.Position < 0)
+                {
+                    Push(b);
+                }
+                else
+                {
+                    Up(b.Position);
+                }
             }
 
             public void Push(Bucket b)
@@ -687,6 +745,150 @@ namespace TriangleNet.Tools
             // Keep the convex hull (otherwise triangles outside the break lines are removed).
             return (Mesh)new GenericMesher().Triangulate(poly, new ConstraintOptions { Convex = true });
         }
+
+        /// <summary>
+        /// Vertical error of the point in the given triangle.
+        /// </summary>
+        /// <remarks>
+        /// If neighbors are cocircular (e.g. grid points), the Delaunay triangulation isn't
+        /// unique: any triangle formed by three of the cocircular vertices may be part of it
+        /// (their convex hull is a convex polygon). The error is the maximum over all of them
+        /// containing the point, so the bound holds for any Delaunay triangulation of the
+        /// selected points.
+        /// </remarks>
+        private static double Error(Mesh mesh, Triangle t, Point p, double height, Func<Vertex, double> z,
+            Dictionary<Triangle, Vertex[]> clusters)
+        {
+            double error = Math.Abs(Interpolate(t, p.x, p.y, z) - height);
+
+            if (!clusters.TryGetValue(t, out var cluster))
+            {
+                cluster = Cocircular(mesh, t);
+                clusters.Add(t, cluster);
+            }
+
+            if (cluster == null)
+            {
+                return error;
+            }
+
+            int n = cluster.Length;
+
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = i + 1; j < n; j++)
+                {
+                    for (int k = j + 1; k < n; k++)
+                    {
+                        Vertex a = cluster[i], b = cluster[j], c = cluster[k];
+
+                        double det = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+
+                        if (det == 0.0)
+                        {
+                            continue;
+                        }
+
+                        double l1 = ((b.x - p.x) * (c.y - p.y) - (c.x - p.x) * (b.y - p.y)) / det;
+                        double l2 = ((c.x - p.x) * (a.y - p.y) - (a.x - p.x) * (c.y - p.y)) / det;
+                        double l3 = 1.0 - l1 - l2;
+
+                        const double eps = -1e-12;
+
+                        if (l1 >= eps && l2 >= eps && l3 >= eps)
+                        {
+                            double h = l1 * z(a) + l2 * z(b) + l3 * z(c);
+                            error = Math.Max(error, Math.Abs(h - height));
+                        }
+                    }
+                }
+            }
+
+            return error;
+        }
+
+        /// <summary>
+        /// The vertices of all triangles connected to the given triangle by cocircular,
+        /// unconstrained edges (null if there are none).
+        /// </summary>
+        private static Vertex[] Cocircular(Mesh mesh, Triangle start)
+        {
+            var triangles = CocircularTriangles(mesh, start);
+
+            if (triangles == null || triangles.Count > MaxCluster)
+            {
+                // Large clusters (many points on a circle) are rare: left to the final check.
+                return null;
+            }
+
+            var vertices = new HashSet<Vertex>();
+
+            foreach (var t in triangles)
+            {
+                vertices.Add(t.vertices[0]);
+                vertices.Add(t.vertices[1]);
+                vertices.Add(t.vertices[2]);
+            }
+
+            var result = new Vertex[vertices.Count];
+            vertices.CopyTo(result);
+
+            return result;
+        }
+
+        /// <summary>
+        /// All triangles connected to the given triangle by cocircular, unconstrained edges
+        /// (null if there are none).
+        /// </summary>
+        private static List<Triangle> CocircularTriangles(Mesh mesh, Triangle start)
+        {
+            List<Triangle> triangles = null;
+            var stack = new Stack<Triangle>();
+            var visited = new HashSet<Triangle> { start };
+
+            stack.Push(start);
+
+            var edge = default(Otri);
+            var sym = default(Otri);
+            var seg = default(Osub);
+
+            while (stack.Count > 0)
+            {
+                edge.tri = stack.Pop();
+
+                for (edge.orient = 0; edge.orient < 3; edge.orient++)
+                {
+                    edge.Sym(ref sym);
+
+                    if (sym.tri.id == Mesh.DUMMY || visited.Contains(sym.tri))
+                    {
+                        continue;
+                    }
+
+                    edge.Pivot(ref seg);
+
+                    if (seg.seg.hash != Mesh.DUMMY)
+                    {
+                        // Break lines aren't flipped.
+                        continue;
+                    }
+
+                    if (mesh.predicates.InCircle(edge.Org(), edge.Dest(), edge.Apex(), sym.Apex()) == 0.0)
+                    {
+                        visited.Add(sym.tri);
+                        stack.Push(sym.tri);
+
+                        triangles = triangles ?? new List<Triangle> { start };
+                        triangles.Add(sym.tri);
+                    }
+                }
+            }
+
+            return triangles;
+        }
+
+        // Maximum number of triangles of a cocircular cluster handled in Error().
+        private const int MaxCluster = 16;
 
         /// <summary>
         /// Linear interpolation in the triangle.
