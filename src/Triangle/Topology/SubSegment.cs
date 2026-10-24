@@ -8,7 +8,6 @@
 namespace TriangleNet.Topology
 {
     using System;
-    using System.Runtime.CompilerServices;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -19,26 +18,17 @@ namespace TriangleNet.Topology
         // Hash for dictionary. Will be set by mesh instance.
         internal int hash;
 
+#if NET8_0_OR_GREATER
         // Stored inline instead of arrays (fewer objects on the heap, see Triangle).
-        private Osub subseg0, subseg1;
-        private Vertex vertex0, vertex1, vertex2, vertex3;
-        private Otri triangle0, triangle1;
+        internal Buffer2<Osub> subsegs;
+        internal Buffer4<Vertex> vertices;
+        internal Buffer2<Otri> triangles;
+#else
+        internal Osub[] subsegs = new Osub[2];
+        internal Vertex[] vertices = new Vertex[4];
+        internal Otri[] triangles = new Otri[2];
+#endif
         internal int boundary;
-
-        /// <summary>
-        /// The two adjoining subsegments (indexed like an array).
-        /// </summary>
-        internal SubsegList subsegs => new SubsegList(this);
-
-        /// <summary>
-        /// The endpoints (0, 1) and the endpoints of the input segment (2, 3).
-        /// </summary>
-        internal VertexList vertices => new VertexList(this);
-
-        /// <summary>
-        /// The two adjoining triangles (indexed like an array).
-        /// </summary>
-        internal TriangleList triangles => new TriangleList(this);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SubSegment" /> class.
@@ -47,71 +37,6 @@ namespace TriangleNet.Topology
         {
             // The vertices, adjoining subsegments and triangles are null (default), the
             // boundary marker is zero.
-        }
-
-        internal readonly struct SubsegList
-        {
-            private readonly SubSegment s;
-
-            public SubsegList(SubSegment s) { this.s = s; }
-
-            public ref Osub this[int index]
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    switch (index)
-                    {
-                        case 0: return ref s.subseg0;
-                        case 1: return ref s.subseg1;
-                        default: throw new IndexOutOfRangeException();
-                    }
-                }
-            }
-        }
-
-        internal readonly struct VertexList
-        {
-            private readonly SubSegment s;
-
-            public VertexList(SubSegment s) { this.s = s; }
-
-            public ref Vertex this[int index]
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    switch (index)
-                    {
-                        case 0: return ref s.vertex0;
-                        case 1: return ref s.vertex1;
-                        case 2: return ref s.vertex2;
-                        case 3: return ref s.vertex3;
-                        default: throw new IndexOutOfRangeException();
-                    }
-                }
-            }
-        }
-
-        internal readonly struct TriangleList
-        {
-            private readonly SubSegment s;
-
-            public TriangleList(SubSegment s) { this.s = s; }
-
-            public ref Otri this[int index]
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    switch (index)
-                    {
-                        case 0: return ref s.triangle0;
-                        case 1: return ref s.triangle1;
-                        default: throw new IndexOutOfRangeException();
-                    }
-                }
-            }
         }
 
         #region Public properties

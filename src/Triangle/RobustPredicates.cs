@@ -641,9 +641,10 @@ namespace TriangleNet
             double det, errbound;
             // Edited to work around index out of range exceptions (changed array length from 4 to 5).
             // See unsafe indexing in FastExpansionSumZeroElim.
-            var w = Workspace.Current;
-            double[] B = w.ccwB, u = w.ccwU;
-            double[] C1 = w.ccwC1, C2 = w.ccwC2, D = w.ccwD;
+            // Local arrays: this is called very often for collinear input, where the access to
+            // the thread-local workspace costs more than allocating the small arrays.
+            double[] B = new double[5], u = new double[5];
+            double[] C1 = new double[8], C2 = new double[12], D = new double[16];
             double B3;
             int C1length, C2length, Dlength;
 
@@ -1318,10 +1319,6 @@ namespace TriangleNet
             public readonly double[] abtt = new double[4];
             public readonly double[] bctt = new double[4];
             public readonly double[] catt = new double[4];
-
-            // Formerly local arrays of CounterClockwiseAdapt.
-            public readonly double[] ccwB = new double[5], ccwU = new double[5];
-            public readonly double[] ccwC1 = new double[8], ccwC2 = new double[12], ccwD = new double[16];
         }
 
         #endregion
