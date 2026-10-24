@@ -641,8 +641,9 @@ namespace TriangleNet
             double det, errbound;
             // Edited to work around index out of range exceptions (changed array length from 4 to 5).
             // See unsafe indexing in FastExpansionSumZeroElim.
-            double[] B = new double[5], u = new double[5];
-            double[] C1 = new double[8], C2 = new double[12], D = new double[16];
+            var w = Workspace.Current;
+            double[] B = w.ccwB, u = w.ccwU;
+            double[] C1 = w.ccwC1, C2 = w.ccwC2, D = w.ccwD;
             double B3;
             int C1length, C2length, Dlength;
 
@@ -746,7 +747,7 @@ namespace TriangleNet
 
             double bdxcdy1, cdxbdy1, cdxady1, adxcdy1, adxbdy1, bdxady1;
             double bdxcdy0, cdxbdy0, cdxady0, adxcdy0, adxbdy0, bdxady0;
-            double[] bc = new double[4], ca = new double[4], ab = new double[4];
+            double[] bc = w.bc, ca = w.ca, ab = w.ab;
             double bc3, ca3, ab3;
             int axbclen, axxbclen, aybclen, ayybclen, alen;
             int bxcalen, bxxcalen, bycalen, byycalen, blen;
@@ -758,32 +759,32 @@ namespace TriangleNet
             double adxtail, bdxtail, cdxtail, adytail, bdytail, cdytail;
             double adxadx1, adyady1, bdxbdx1, bdybdy1, cdxcdx1, cdycdy1;
             double adxadx0, adyady0, bdxbdx0, bdybdy0, cdxcdx0, cdycdy0;
-            double[] aa = new double[4], bb = new double[4], cc = new double[4];
+            double[] aa = w.aa, bb = w.bb, cc = w.cc;
             double aa3, bb3, cc3;
             double ti1, tj1;
             double ti0, tj0;
             // Edited to work around index out of range exceptions (changed array length from 4 to 5).
             // See unsafe indexing in FastExpansionSumZeroElim.
-            double[] u = new double[5], v = new double[5];
+            double[] u = w.u, v = w.v;
             double u3, v3;
             int temp8len, temp16alen, temp16blen, temp16clen;
             int temp32alen, temp32blen, temp48len, temp64len;
-            double[] axtbb = new double[8], axtcc = new double[8], aytbb = new double[8], aytcc = new double[8];
+            double[] axtbb = w.axtbb, axtcc = w.axtcc, aytbb = w.aytbb, aytcc = w.aytcc;
             int axtbblen, axtcclen, aytbblen, aytcclen;
-            double[] bxtaa = new double[8], bxtcc = new double[8], bytaa = new double[8], bytcc = new double[8];
+            double[] bxtaa = w.bxtaa, bxtcc = w.bxtcc, bytaa = w.bytaa, bytcc = w.bytcc;
             int bxtaalen, bxtcclen, bytaalen, bytcclen;
-            double[] cxtaa = new double[8], cxtbb = new double[8], cytaa = new double[8], cytbb = new double[8];
+            double[] cxtaa = w.cxtaa, cxtbb = w.cxtbb, cytaa = w.cytaa, cytbb = w.cytbb;
             int cxtaalen, cxtbblen, cytaalen, cytbblen;
-            double[] axtbc = new double[8], aytbc = new double[8], bxtca = new double[8], bytca = new double[8], cxtab = new double[8], cytab = new double[8];
+            double[] axtbc = w.axtbc, aytbc = w.aytbc, bxtca = w.bxtca, bytca = w.bytca, cxtab = w.cxtab, cytab = w.cytab;
             int axtbclen = 0, aytbclen = 0, bxtcalen = 0, bytcalen = 0, cxtablen = 0, cytablen = 0;
-            double[] axtbct = new double[16], aytbct = new double[16], bxtcat = new double[16], bytcat = new double[16], cxtabt = new double[16], cytabt = new double[16];
+            double[] axtbct = w.axtbct, aytbct = w.aytbct, bxtcat = w.bxtcat, bytcat = w.bytcat, cxtabt = w.cxtabt, cytabt = w.cytabt;
             int axtbctlen, aytbctlen, bxtcatlen, bytcatlen, cxtabtlen, cytabtlen;
-            double[] axtbctt = new double[8], aytbctt = new double[8], bxtcatt = new double[8];
-            double[] bytcatt = new double[8], cxtabtt = new double[8], cytabtt = new double[8];
+            double[] axtbctt = w.axtbctt, aytbctt = w.aytbctt, bxtcatt = w.bxtcatt;
+            double[] bytcatt = w.bytcatt, cxtabtt = w.cxtabtt, cytabtt = w.cytabtt;
             int axtbcttlen, aytbcttlen, bxtcattlen, bytcattlen, cxtabttlen, cytabttlen;
-            double[] abt = new double[8], bct = new double[8], cat = new double[8];
+            double[] abt = w.abt, bct = w.bct, cat = w.cat;
             int abtlen, bctlen, catlen;
-            double[] abtt = new double[4], bctt = new double[4], catt = new double[4];
+            double[] abtt = w.abtt, bctt = w.bctt, catt = w.catt;
             int abttlen, bcttlen, cattlen;
             double abtt3, bctt3, catt3;
             double negate;
@@ -1252,7 +1253,7 @@ namespace TriangleNet
         #region Workspace
 
         /// <summary>
-        /// Workspace of the InCircleAdapt method. The workspace is thread-local, so a
+        /// Workspace of the adaptive predicates. The workspace is thread-local, so a
         /// single <see cref="RobustPredicates"/> instance can be used from multiple threads.
         /// </summary>
         private sealed class Workspace
@@ -1270,6 +1271,57 @@ namespace TriangleNet
 
             public readonly double[] temp8 = new double[8], temp16a = new double[16], temp16b = new double[16], temp16c = new double[16];
             public readonly double[] temp32a = new double[32], temp32b = new double[32], temp48 = new double[48], temp64 = new double[64];
+
+            // Formerly local arrays of InCircleAdapt (allocated on every call; like in the
+            // original C code, they are always written before they are read).
+            public readonly double[] bc = new double[4];
+            public readonly double[] ca = new double[4];
+            public readonly double[] ab = new double[4];
+            public readonly double[] aa = new double[4];
+            public readonly double[] bb = new double[4];
+            public readonly double[] cc = new double[4];
+            public readonly double[] u = new double[5];
+            public readonly double[] v = new double[5];
+            public readonly double[] axtbb = new double[8];
+            public readonly double[] axtcc = new double[8];
+            public readonly double[] aytbb = new double[8];
+            public readonly double[] aytcc = new double[8];
+            public readonly double[] bxtaa = new double[8];
+            public readonly double[] bxtcc = new double[8];
+            public readonly double[] bytaa = new double[8];
+            public readonly double[] bytcc = new double[8];
+            public readonly double[] cxtaa = new double[8];
+            public readonly double[] cxtbb = new double[8];
+            public readonly double[] cytaa = new double[8];
+            public readonly double[] cytbb = new double[8];
+            public readonly double[] axtbc = new double[8];
+            public readonly double[] aytbc = new double[8];
+            public readonly double[] bxtca = new double[8];
+            public readonly double[] bytca = new double[8];
+            public readonly double[] cxtab = new double[8];
+            public readonly double[] cytab = new double[8];
+            public readonly double[] axtbct = new double[16];
+            public readonly double[] aytbct = new double[16];
+            public readonly double[] bxtcat = new double[16];
+            public readonly double[] bytcat = new double[16];
+            public readonly double[] cxtabt = new double[16];
+            public readonly double[] cytabt = new double[16];
+            public readonly double[] axtbctt = new double[8];
+            public readonly double[] aytbctt = new double[8];
+            public readonly double[] bxtcatt = new double[8];
+            public readonly double[] bytcatt = new double[8];
+            public readonly double[] cxtabtt = new double[8];
+            public readonly double[] cytabtt = new double[8];
+            public readonly double[] abt = new double[8];
+            public readonly double[] bct = new double[8];
+            public readonly double[] cat = new double[8];
+            public readonly double[] abtt = new double[4];
+            public readonly double[] bctt = new double[4];
+            public readonly double[] catt = new double[4];
+
+            // Formerly local arrays of CounterClockwiseAdapt.
+            public readonly double[] ccwB = new double[5], ccwU = new double[5];
+            public readonly double[] ccwC1 = new double[8], ccwC2 = new double[12], ccwD = new double[16];
         }
 
         #endregion

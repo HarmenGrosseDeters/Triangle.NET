@@ -42,6 +42,8 @@ namespace TriangleNet
         readonly double[] workDoSmoothing_possibilities = new double[6];
         readonly double[] workGetStarPoints_returnPoint = new double[2];
         readonly double[] workGetWedgeIntersectionWithoutMaxAngle_p1 = new double[3];
+        readonly double[] workGetWedgeIntersectionWithoutMaxAngle_cos = new double[4];
+        readonly double[] workGetWedgeIntersectionWithoutMaxAngle_sin = new double[4];
         readonly double[] workGetWedgeIntersection_p1 = new double[3];
         readonly double[] workGetWedgeIntersection_p2 = new double[3];
         readonly double[] workGetWedgeIntersection_p3 = new double[3];
@@ -2520,6 +2522,17 @@ namespace TriangleNet
 
             // minimum angle
             alpha = behavior.MinAngle * Math.PI / 180.0;
+
+            // The same rotations for every edge (computed once, the results are identical).
+            double cosA = Math.Cos(alpha), sinA = Math.Sin(alpha);
+            var cosJ = workGetWedgeIntersectionWithoutMaxAngle_cos;
+            var sinJ = workGetWedgeIntersectionWithoutMaxAngle_sin;
+
+            for (j = 1; j < 4; j++)
+            {
+                cosJ[j] = Math.Cos((Math.PI / 3.0 - alpha) * j);
+                sinJ[j] = Math.Sin((Math.PI / 3.0 - alpha) * j);
+            }
             // initialize the constants
             if (behavior.goodAngle == 1.0)
             {
@@ -2529,7 +2542,7 @@ namespace TriangleNet
             else
             {
                 petalcenterconstant = 0.5 / Math.Tan(alpha);
-                petalradiusconstant = 0.5 / Math.Sin(alpha);
+                petalradiusconstant = 0.5 / sinA;
             }
 
             for (i = 0; i < numpoints * 2; i = i + 2)
@@ -2578,8 +2591,8 @@ namespace TriangleNet
                 ux = x1 - x0;
                 uy = y1 - y0;
                 // rotate the vector around p = (x0,y0) in ccw by alpha degrees
-                x_1 = x1 * Math.Cos(alpha) - y1 * Math.Sin(alpha) + x0 - x0 * Math.Cos(alpha) + y0 * Math.Sin(alpha);
-                y_1 = x1 * Math.Sin(alpha) + y1 * Math.Cos(alpha) + y0 - x0 * Math.Sin(alpha) - y0 * Math.Cos(alpha);
+                x_1 = x1 * cosA - y1 * sinA + x0 - x0 * cosA + y0 * sinA;
+                y_1 = x1 * sinA + y1 * cosA + y0 - x0 * sinA - y0 * cosA;
                 // add these to wedges list as lines in order
                 wedges[i * 16] = x0; wedges[i * 16 + 1] = y0;
                 wedges[i * 16 + 2] = x_1; wedges[i * 16 + 3] = y_1;
@@ -2589,8 +2602,8 @@ namespace TriangleNet
                 ux = x0 - x1;
                 uy = y0 - y1;
                 // rotate the vector around q = (x1,y1) in cw by alpha degrees
-                x_2 = x0 * Math.Cos(alpha) + y0 * Math.Sin(alpha) + x1 - x1 * Math.Cos(alpha) - y1 * Math.Sin(alpha);
-                y_2 = -x0 * Math.Sin(alpha) + y0 * Math.Cos(alpha) + y1 + x1 * Math.Sin(alpha) - y1 * Math.Cos(alpha);
+                x_2 = x0 * cosA + y0 * sinA + x1 - x1 * cosA - y1 * sinA;
+                y_2 = -x0 * sinA + y0 * cosA + y1 + x1 * sinA - y1 * cosA;
                 // add these to wedges list as lines in order
                 wedges[i * 16 + 4] = x_2; wedges[i * 16 + 5] = y_2;
                 wedges[i * 16 + 6] = x1; wedges[i * 16 + 7] = y1;
@@ -2603,8 +2616,8 @@ namespace TriangleNet
                 for (j = 1; j < 4; j++)
                 {
                     // rotate the vector around (petalx,petaly) in cw by (60 - alpha)*j degrees
-                    x_3 = x3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + y3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + petalx[i / 2] - petalx[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j);
-                    y_3 = -x3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + y3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] + petalx[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j);
+                    x_3 = x3 * cosJ[j] + y3 * sinJ[j] + petalx[i / 2] - petalx[i / 2] * cosJ[j] - petaly[i / 2] * sinJ[j];
+                    y_3 = -x3 * sinJ[j] + y3 * cosJ[j] + petaly[i / 2] + petalx[i / 2] * sinJ[j] - petaly[i / 2] * cosJ[j];
                     // add these to wedges list as lines in order
                     wedges[i * 16 + 8 + 4 * (j - 1)] = x_3; wedges[i * 16 + 9 + 4 * (j - 1)] = y_3;
                     wedges[i * 16 + 10 + 4 * (j - 1)] = tempx; wedges[i * 16 + 11 + 4 * (j - 1)] = tempy;
@@ -2615,8 +2628,8 @@ namespace TriangleNet
                 for (j = 1; j < 4; j++)
                 {
                     // rotate the vector around (petalx,petaly) in ccw by (60 - alpha)*j degrees
-                    x_4 = x3 * Math.Cos((Math.PI / 3.0 - alpha) * j) - y3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + petalx[i / 2] - petalx[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j);
-                    y_4 = x3 * Math.Sin((Math.PI / 3.0 - alpha) * j) + y3 * Math.Cos((Math.PI / 3.0 - alpha) * j) + petaly[i / 2] - petalx[i / 2] * Math.Sin((Math.PI / 3.0 - alpha) * j) - petaly[i / 2] * Math.Cos((Math.PI / 3.0 - alpha) * j);
+                    x_4 = x3 * cosJ[j] - y3 * sinJ[j] + petalx[i / 2] - petalx[i / 2] * cosJ[j] + petaly[i / 2] * sinJ[j];
+                    y_4 = x3 * sinJ[j] + y3 * cosJ[j] + petaly[i / 2] - petalx[i / 2] * sinJ[j] - petaly[i / 2] * cosJ[j];
 
                     // add these to wedges list as lines in order
                     wedges[i * 16 + 20 + 4 * (j - 1)] = tempx; wedges[i * 16 + 21 + 4 * (j - 1)] = tempy;

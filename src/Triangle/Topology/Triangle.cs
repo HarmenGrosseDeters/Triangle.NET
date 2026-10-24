@@ -8,6 +8,7 @@
 namespace TriangleNet.Topology
 {
     using System;
+    using System.Runtime.CompilerServices;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -21,9 +22,27 @@ namespace TriangleNet.Topology
         // The ID is only used for mesh output.
         internal int id;
 
-        internal Otri[] neighbors;
-        internal Vertex[] vertices;
-        internal Osub[] subsegs;
+        // The vertices, adjoining triangles and subsegments are stored inline (as arrays, a
+        // triangle consisted of four objects on the heap, which made up more than half of all
+        // allocations of a quality mesh and a large part of the garbage collection time).
+        private Vertex vertex0, vertex1, vertex2;
+        private Otri neighbor0, neighbor1, neighbor2;
+        private Osub subseg0, subseg1, subseg2;
+
+        /// <summary>
+        /// The three vertices (indexed like an array).
+        /// </summary>
+        internal VertexList vertices => new VertexList(this);
+
+        /// <summary>
+        /// The three adjoining triangles (indexed like an array).
+        /// </summary>
+        internal NeighborList neighbors => new NeighborList(this);
+
+        /// <summary>
+        /// The three adjoining subsegments (indexed like an array).
+        /// </summary>
+        internal SubsegList subsegs => new SubsegList(this);
         internal int label;
         internal double area;
         internal bool infected;
@@ -33,16 +52,73 @@ namespace TriangleNet.Topology
         /// </summary>
         public Triangle()
         {
-            // Three NULL vertices.
-            vertices = new Vertex[3];
+            // The vertices, adjoining subsegments and triangles are null (default).
+        }
 
-            // Initialize the three adjoining subsegments to be the omnipresent subsegment.
-            subsegs = new Osub[3];
+        internal readonly struct VertexList
+        {
+            private readonly Triangle t;
 
-            // Initialize the three adjoining triangles to be "outer space".
-            neighbors = new Otri[3];
+            public VertexList(Triangle t) { this.t = t; }
 
-            // area = -1.0;
+            public ref Vertex this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (index)
+                    {
+                        case 0: return ref t.vertex0;
+                        case 1: return ref t.vertex1;
+                        case 2: return ref t.vertex2;
+                        default: throw new IndexOutOfRangeException();
+                    }
+                }
+            }
+        }
+
+        internal readonly struct NeighborList
+        {
+            private readonly Triangle t;
+
+            public NeighborList(Triangle t) { this.t = t; }
+
+            public ref Otri this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (index)
+                    {
+                        case 0: return ref t.neighbor0;
+                        case 1: return ref t.neighbor1;
+                        case 2: return ref t.neighbor2;
+                        default: throw new IndexOutOfRangeException();
+                    }
+                }
+            }
+        }
+
+        internal readonly struct SubsegList
+        {
+            private readonly Triangle t;
+
+            public SubsegList(Triangle t) { this.t = t; }
+
+            public ref Osub this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    switch (index)
+                    {
+                        case 0: return ref t.subseg0;
+                        case 1: return ref t.subseg1;
+                        case 2: return ref t.subseg2;
+                        default: throw new IndexOutOfRangeException();
+                    }
+                }
+            }
         }
 
         #region Public properties
