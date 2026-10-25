@@ -27,6 +27,9 @@ namespace TriangleNet.Tests.Corpus
     ///                         https://github.com/nvkelso/natural-earth-vector/tree/master/geojson)
     ///   TRIANGLE_CDT_INPUTS   directory CDT/tests/inputs of https://github.com/artem-ogre/CDT
     ///                         (edge cases: hanging and overlapping constraints, points on edges, ...)
+    ///   TRIANGLE_PUBLIC_FIXTURES directory with clones of https://github.com/mapbox/earcut,
+    ///                         https://github.com/mapbox/delaunator and https://github.com/jhasse/poly2tri
+    ///                         (test fixtures of other triangulation libraries, ISC/BSD licensed)
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
     ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
@@ -81,6 +84,19 @@ namespace TriangleNet.Tests.Corpus
                 }).ToList();
 
             RunCases(cases);
+        }
+
+        [Test]
+        public void PublicFixtures()
+        {
+            var directory = Environment.GetEnvironmentVariable("TRIANGLE_PUBLIC_FIXTURES");
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                Assert.Ignore("TRIANGLE_PUBLIC_FIXTURES not set.");
+            }
+
+            RunCases(CorpusReaders.ReadPublicFixtures(directory));
         }
 
         [Test]

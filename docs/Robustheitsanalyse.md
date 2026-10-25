@@ -676,6 +676,65 @@ alten Repo wandelt das Netz sofort in `NetzDaten` um; Referenz- und Hauptnetz br
 getrennte Pools, weil beide gleichzeitig leben). Je Thread ein Pool, `TrianglePool` ist nicht
 threadsicher.
 
+## Vergleich mit anderen Bibliotheken und öffentlichen Testdaten
+
+Gleiche Maschine, .NET 10, Median aus wiederholten Läufen. „Original“ ist Triangle.NET von
+wo80 (Commit `fa6f2fd`, Basis dieses Forks).
+
+**Delaunay ohne Constraints** (Szenario des BurstTriangulator-Benchmarks: n×n-Gitter im
+Einheitsquadrat, dazu gleich viele Zufallspunkte):
+
+| Punkte | Original Gitter | Fork Gitter | delaunator-sharp Gitter | Original zufällig | Fork zufällig | delaunator-sharp zufällig |
+|-------:|----------------:|------------:|------------------------:|------------------:|--------------:|--------------------------:|
+| 10.000 | 25 ms | 10 ms | 3,8 ms | 11 ms | 8,7 ms | 4,7 ms |
+| 99.856 | 1.004 ms | 132 ms | 44 ms | 188 ms | 110 ms | 52 ms |
+| 1.000.000 | 9.188 ms | 4.373 ms | 768 ms | 4.545 ms | 2.356 ms | 1.189 ms |
+
+BurstTriangulator ist in seiner eigenen Grafik 7–8× schneller als delaunator-sharp (nativer
+Code über Burst/LLVM, Unity). Für reine Delaunay-Triangulierung großer Punktmengen bleibt der Fork
+also deutlich langsamer; das liegt an den Objekten pro Dreieck (siehe Pooling) und ist nur mit
+einer index-basierten Struktur aufzuholen.
+
+**Verfeinerung:** Lake Superior (aus BurstTriangulator, 518 Punkte, 6 Löcher), Flächengrenze 100
+(wirkungslos), Mindestwinkel wie im Burst-Benchmark:
+
+| Mindestwinkel | Dreiecke | Zeit |
+|--------------:|---------:|-----:|
+| 20° | 1.003 | 2,8 ms |
+| 30° | 1.481 | 3,9 ms |
+| 33,73° (Grenze von Burst) | 1.812 | 4,5 ms |
+| 36° | 2.144 | 5,5 ms |
+| 38° | 2.751 | 7,3 ms |
+
+Laut BurstTriangulator-Dokumentation (v3.6) braucht Burst dort bis zu ~7.800 Dreiecke und 69 ms und
+endet bei 33,73°. Der Fork vernetzt mit rund einem Viertel der Dreiecke, ist etwa 15× schneller und
+kommt bis 38° (40° endet am Steiner-Limit). Das Original rechnet bis 38° gleich, stürzt bei 40° aber
+in den Prädikaten ab (`IndexOutOfRangeException`). Mit `ConformingDelaunay` ändern sich die Zahlen
+kaum.
+
+Gefunden und behoben dabei: reine Flächenverfeinerung (Einheitsquadrat, Maximalfläche 0,001) war
+mit aCute 10× langsamer als nötig, weil für jedes zu große Dreieck versucht wurde, eine Ecke zu
+verschieben (Relocation verbessert Winkel, nicht die Fläche): 148 → 14 ms bei gleicher
+Dreieckszahl; Original 125 ms. Die Vorabprüfung auf verletzte Teilsegmente bricht jetzt ab, wenn
+keines betroffen ist (klassische Verfeinerung wieder so schnell wie im Original).
+
+**Öffentliche Testdaten** (`CorpusTest.PublicFixtures`, `TRIANGLE_PUBLIC_FIXTURES`): Testfälle
+von mapbox/earcut (61 Polygone aus echten Daten und Fehlerberichten: Gewässer, sich berührende
+Löcher, selbstberührende Ringe), mapbox/delaunator (Robustheitsfälle, Ukraine) und jhasse/poly2tri
+(22 Umrisse). Jeweils ohne Qualität, 20° und 30°: 273 Läufe, alle gültig (Konsistenz, keine
+gekippten Dreiecke, alle Linien abgedeckt, Delaunay).
+
+Direkter Vergleich mit Original (Ringe als Linien und als Löcher, ohne Qualität und 30°):
+
+| | gültig | leer (erwartet) | Exception | Endlosschleife | inkonsistent |
+|---|---:|---:|---:|---:|---:|
+| Original | 305 | 8 | 31 | 2 | 2 |
+| Fork | 338 | 10 | 0 | 0 | 0 |
+
+Die leeren Ergebnisse entsprechen den Erwartungen von earcut (0 Dreiecke für entartete
+Eingaben). Lochringe ohne Fläche (earcut `water-huge`, `issue83`) warfen vorher eine Exception;
+jetzt werden ihre Kanten als Linien übernommen (earcut ignoriert solche Löcher).
+
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
 Alle 80 Quelldateien wurden in sechs Bereichen auf Fehler untersucht; jede Vermutung wurde mit

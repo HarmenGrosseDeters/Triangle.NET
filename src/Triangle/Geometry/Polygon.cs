@@ -6,6 +6,7 @@
 
 namespace TriangleNet.Geometry
 {
+    using System;
     using System.Collections.Generic;
 
     /// <summary>
@@ -133,7 +134,21 @@ namespace TriangleNet.Geometry
         {
             if (hole)
             {
-                Add(contour, contour.FindInteriorPoint());
+                Point interior;
+
+                try
+                {
+                    interior = contour.FindInteriorPoint();
+                }
+                catch (InvalidOperationException)
+                {
+                    // A hole without interior (fewer than three distinct points, or all edges
+                    // on one line) removes nothing: only its edges are added as segments.
+                    AddContourPointsAndSegments(contour);
+                    return;
+                }
+
+                Add(contour, interior);
             }
             else
             {

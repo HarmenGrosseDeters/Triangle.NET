@@ -129,6 +129,65 @@ namespace TriangleNet.Tests.Corpus
         /// CDT/tests/inputs): number of vertices and edges, the vertex coordinates, the edges
         /// as pairs of vertex indices.
         /// </summary>
+        /// <summary>
+        /// Test fixtures of other triangulation libraries below the given directory (each in its
+        /// own folder, as cloned from GitHub): mapbox/earcut test/fixtures (rings as closed lines),
+        /// mapbox/delaunator test/fixtures (point sets), jhasse/poly2tri testbed/data (outlines).
+        /// </summary>
+        public static IEnumerable<CorpusCase> ReadPublicFixtures(string root)
+        {
+            (double, double) P(System.Text.Json.JsonElement e) => (e[0].GetDouble(), e[1].GetDouble());
+
+            var earcut = Path.Combine(root, "earcut", "test", "fixtures");
+            if (Directory.Exists(earcut))
+            {
+                foreach (var path in Directory.GetFiles(earcut, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var c = new CorpusCase { Name = "earcut/" + Path.GetFileNameWithoutExtension(path) };
+
+                    foreach (var ring in System.Text.Json.JsonDocument.Parse(File.ReadAllText(path)).RootElement.EnumerateArray())
+                    {
+                        var line = ring.EnumerateArray().Select(P).ToList();
+                        if (line.Count > 1 && line[0] != line[line.Count - 1]) line.Add(line[0]);
+                        if (line.Count > 1) c.Lines.Add(line);
+                    }
+
+                    yield return c;
+                }
+            }
+
+            var delaunator = Path.Combine(root, "delaunator", "test", "fixtures");
+            if (Directory.Exists(delaunator))
+            {
+                foreach (var path in Directory.GetFiles(delaunator, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var c = new CorpusCase { Name = "delaunator/" + Path.GetFileNameWithoutExtension(path) };
+                    c.Points.AddRange(System.Text.Json.JsonDocument.Parse(File.ReadAllText(path)).RootElement.EnumerateArray().Select(P));
+                    yield return c;
+                }
+            }
+
+            var poly2tri = Path.Combine(root, "poly2tri", "testbed", "data");
+            if (Directory.Exists(poly2tri))
+            {
+                foreach (var path in Directory.GetFiles(poly2tri, "*.dat").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var line = File.ReadAllLines(path)
+                        .Select(l => l.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                        .Where(t => t.Length >= 2)
+                        .Select(t => (double.Parse(t[0], CultureInfo.InvariantCulture), double.Parse(t[1], CultureInfo.InvariantCulture)))
+                        .ToList();
+
+                    if (line.Count < 2) continue;
+                    line.Add(line[0]);
+
+                    var c = new CorpusCase { Name = "poly2tri/" + Path.GetFileNameWithoutExtension(path) };
+                    c.Lines.Add(line);
+                    yield return c;
+                }
+            }
+        }
+
         public static IEnumerable<CorpusCase> ReadCdtInputs(string directory)
         {
             foreach (var path in Directory.GetFiles(directory, "*.txt").OrderBy(p => p, StringComparer.Ordinal))

@@ -80,7 +80,8 @@ namespace TriangleNet.Geometry
         /// Add a contour to the polygon.
         /// </summary>
         /// <param name="contour">The contour to insert.</param>
-        /// <param name="hole">Treat contour as a hole.</param>
+        /// <param name="hole">Treat contour as a hole (a hole contour without interior, e.g. with
+        /// all points on a line, removes nothing: only its edges are added as segments).</param>
         void Add(Contour contour, bool hole = false);
 
         /// <summary>
