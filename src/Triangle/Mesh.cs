@@ -515,6 +515,23 @@ namespace TriangleNet
         /// Create a new triangle with orientation zero.
         /// </summary>
         /// <param name="newotri">Reference to the new triangle.</param>
+        // Last value used to mark triangles in a search.
+        private int mark;
+
+        /// <summary>
+        /// Returns a new value to mark triangles as visited (instead of a set of triangles).
+        /// </summary>
+        internal int NextMark()
+        {
+            if (++mark == int.MaxValue)
+            {
+                foreach (var t in triangles) t.mark = 0;
+                mark = 1;
+            }
+
+            return mark;
+        }
+
         internal void MakeTriangle(ref Otri newotri)
         {
             Triangle tri = triangles.Get();

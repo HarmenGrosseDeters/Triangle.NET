@@ -48,6 +48,9 @@ namespace TriangleNet.Topology
         internal double area;
         internal bool infected;
 
+        // Marks the triangle as visited in a search (see Mesh.NextMark).
+        internal int mark;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Triangle" /> class.
         /// </summary>

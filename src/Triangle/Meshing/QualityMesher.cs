@@ -1062,7 +1062,6 @@ namespace TriangleNet.Meshing
         }
 
         // Work data of EncroachesBeforeInsertion.
-        private readonly HashSet<Triangle> cavity = new HashSet<Triangle>();
         private readonly Stack<Otri> cavityStack = new Stack<Otri>();
         private readonly Dictionary<Vertex, Otri> cavityBoundary = new Dictionary<Vertex, Otri>();
         private readonly List<Otri> cavityEdges = new List<Otri>();
@@ -1108,7 +1107,9 @@ namespace TriangleNet.Meshing
                 return false;
             }
 
-            cavity.Clear();
+            int stamp = mesh.NextMark();
+            int cavityCount = 1;
+
             cavityStack.Clear();
             cavityBoundary.Clear();
             cavityEdges.Clear();
@@ -1118,7 +1119,7 @@ namespace TriangleNet.Meshing
             Otri tri = default(Otri), neighbor = default(Otri);
             Osub sub = default(Osub);
 
-            cavity.Add(horiz.tri);
+            horiz.tri.mark = stamp;
             cavityStack.Push(horiz);
 
             while (cavityStack.Count > 0)
@@ -1135,7 +1136,7 @@ namespace TriangleNet.Meshing
 
                         if (neighbor.tri.id != Mesh.DUMMY)
                         {
-                            if (cavity.Contains(neighbor.tri))
+                            if (neighbor.tri.mark == stamp)
                             {
                                 continue;
                             }
@@ -1143,7 +1144,8 @@ namespace TriangleNet.Meshing
                             // Same test (and argument order) as in Mesh.InsertVertex.
                             if (predicates.InCircle(tri.Dest(), v, tri.Org(), neighbor.Apex()) > 0.0)
                             {
-                                cavity.Add(neighbor.tri);
+                                neighbor.tri.mark = stamp;
+                                cavityCount++;
                                 cavityStack.Push(neighbor);
                                 continue;
                             }
@@ -1159,7 +1161,7 @@ namespace TriangleNet.Meshing
                     }
                 }
 
-                if (cavity.Count > LargeCavity && cavityEncroached.Count > 0)
+                if (cavityCount > LargeCavity && cavityEncroached.Count > 0)
                 {
                     for (int i = 0; i < cavityEncroached.Count; i++)
                     {
@@ -1210,7 +1212,7 @@ namespace TriangleNet.Meshing
                     sub.Sym(ref sym);
                     sym.Pivot(ref neighbor);
 
-                    if (neighbor.tri.id != Mesh.DUMMY && cavity.Contains(neighbor.tri))
+                    if (neighbor.tri.id != Mesh.DUMMY && neighbor.tri.mark == stamp)
                     {
                         return false;
                     }
