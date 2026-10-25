@@ -23,6 +23,10 @@ namespace TriangleNet.Tests.Corpus
     ///                         https://www.opengeodata.nrw.de (Liegenschaftskataster) or the
     ///                         open data portals of NRW cities
     ///   TRIANGLE_NRW_DGM      DGM1 xyz(.gz) tile from https://www.opengeodata.nrw.de (dgm1_xyz)
+    ///   TRIANGLE_NATURAL_EARTH directory with ne_*_coastline.geojson (Natural Earth, public domain,
+    ///                         https://github.com/nvkelso/natural-earth-vector/tree/master/geojson)
+    ///   TRIANGLE_CDT_INPUTS   directory CDT/tests/inputs of https://github.com/artem-ogre/CDT
+    ///                         (edge cases: hanging and overlapping constraints, points on edges, ...)
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
     ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
@@ -52,6 +56,41 @@ namespace TriangleNet.Tests.Corpus
             }
 
             RunCases(CorpusReaders.ReadGeosXml(directory));
+        }
+
+        [Test]
+        public void NaturalEarthCoastlines()
+        {
+            var directory = Environment.GetEnvironmentVariable("TRIANGLE_NATURAL_EARTH");
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                Assert.Ignore("TRIANGLE_NATURAL_EARTH not set.");
+            }
+
+            // Each file as a whole (ne_10m: about 410,000 vertices and constraints).
+            var cases = Directory.GetFiles(directory, "ne_*_coastline.geojson").OrderBy(p => p, StringComparer.Ordinal)
+                .Select(path =>
+                {
+                    var c = new CorpusCase { Name = Path.GetFileName(path) };
+                    c.Lines.AddRange(CorpusReaders.ReadGeoJsonRings(path));
+                    return c;
+                }).ToList();
+
+            RunCases(cases);
+        }
+
+        [Test]
+        public void CdtLibraryInputs()
+        {
+            var directory = Environment.GetEnvironmentVariable("TRIANGLE_CDT_INPUTS");
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                Assert.Ignore("TRIANGLE_CDT_INPUTS not set.");
+            }
+
+            RunCases(CorpusReaders.ReadCdtInputs(directory));
         }
 
         [Test]

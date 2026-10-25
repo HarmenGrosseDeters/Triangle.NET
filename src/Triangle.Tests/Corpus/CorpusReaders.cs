@@ -102,6 +102,15 @@ namespace TriangleNet.Tests.Corpus
                 {
                     foreach (var polygon in coordinates.EnumerateArray()) AddPolygon(rings, polygon);
                 }
+                else if (type == "LineString")
+                {
+                    // Polylines (e.g. coastlines) are returned like rings.
+                    rings.Add(coordinates.EnumerateArray().Select(p => (p[0].GetDouble(), p[1].GetDouble())).ToList());
+                }
+                else if (type == "MultiLineString")
+                {
+                    AddPolygon(rings, coordinates);
+                }
             }
 
             return rings;
@@ -112,6 +121,49 @@ namespace TriangleNet.Tests.Corpus
             foreach (var ring in polygon.EnumerateArray())
             {
                 rings.Add(ring.EnumerateArray().Select(p => (p[0].GetDouble(), p[1].GetDouble())).ToList());
+            }
+        }
+
+        /// <summary>
+        /// Read the test inputs of the CDT library (https://github.com/artem-ogre/CDT,
+        /// CDT/tests/inputs): number of vertices and edges, the vertex coordinates, the edges
+        /// as pairs of vertex indices.
+        /// </summary>
+        public static IEnumerable<CorpusCase> ReadCdtInputs(string directory)
+        {
+            foreach (var path in Directory.GetFiles(directory, "*.txt").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var tokens = File.ReadAllText(path).Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (tokens.Length < 2 || !int.TryParse(tokens[0], out int nv) || !int.TryParse(tokens[1], out int ne) ||
+                    tokens.Length < 2 + 2 * nv + 2 * ne)
+                {
+                    continue;
+                }
+
+                var c = new CorpusCase { Name = "cdt/" + Path.GetFileName(path) };
+                var points = new List<(double X, double Y)>(nv);
+
+                for (int i = 0; i < nv; i++)
+                {
+                    points.Add((double.Parse(tokens[2 + 2 * i], CultureInfo.InvariantCulture),
+                        double.Parse(tokens[3 + 2 * i], CultureInfo.InvariantCulture)));
+                }
+
+                c.Points.AddRange(points);
+
+                for (int e = 0; e < ne; e++)
+                {
+                    int a = int.Parse(tokens[2 + 2 * nv + 2 * e], CultureInfo.InvariantCulture);
+                    int b = int.Parse(tokens[3 + 2 * nv + 2 * e], CultureInfo.InvariantCulture);
+
+                    if (a >= 0 && a < nv && b >= 0 && b < nv)
+                    {
+                        c.Lines.Add(new List<(double X, double Y)> { points[a], points[b] });
+                    }
+                }
+
+                yield return c;
             }
         }
 
