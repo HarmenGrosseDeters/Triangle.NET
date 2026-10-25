@@ -114,7 +114,7 @@ namespace TriangleNet.Meshing.Iterators
                     testtri.Pivot(ref neighborsubseg);
                     // Make sure the neighbor exists, is not already infected, and
                     // isn't protected by a subsegment.
-                    if ((neighbor.tri.id != Mesh.DUMMY) && !neighbor.IsInfected()
+                    if ((neighbor.index != 0) && !neighbor.IsInfected()
                         && protector(neighborsubseg.seg))
                     {
                         // Infect the neighbor.

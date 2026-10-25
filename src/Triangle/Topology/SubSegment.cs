@@ -123,7 +123,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public ITriangle GetTriangle(int index)
         {
-            return triangles[index].tri.hash == Mesh.DUMMY ? null : triangles[index].tri;
+            return triangles[index].index == 0 ? null : triangles[index].tri;
         }
 
         /// <summary>

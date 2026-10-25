@@ -224,7 +224,7 @@ namespace TriangleNet
                     }
                 }
                 // Check for walking right out of the triangulation.
-                if (searchtri.tri.id == Mesh.DUMMY)
+                if (searchtri.index == 0)
                 {
                     // Go back to the last triangle.
                     backtracktri.Copy(ref searchtri);

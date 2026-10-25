@@ -20,8 +20,18 @@ namespace TriangleNet.Topology
     /// </remarks>
     public struct Otri
     {
-        internal Triangle tri;
+        // The triangle (index into the arrays of the pool), stored flat (16 bytes per handle).
+        internal TrianglePool pool;
+        internal int index;
         internal int orient; // Ranges from 0 to 2.
+
+        internal Triangle tri
+        {
+            [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+            get => new Triangle(pool, index);
+            [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+            set { pool = value.pool; index = value.index; }
+        }
 
         public int Orient => orient;
 
@@ -89,8 +99,8 @@ namespace TriangleNet.Topology
         /// </remarks>
         public void Sym(ref Otri ot)
         {
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
         }
 
@@ -99,8 +109,8 @@ namespace TriangleNet.Topology
         /// </summary>
         public void Sym()
         {
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
         }
 
@@ -109,7 +119,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public void Lnext(ref Otri ot)
         {
-            ot.tri = tri;
+            ot.pool = pool; ot.index = index;
             ot.orient = plus1Mod3[orient];
         }
 
@@ -126,7 +136,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public void Lprev(ref Otri ot)
         {
-            ot.tri = tri;
+            ot.pool = pool; ot.index = index;
             ot.orient = minus1Mod3[orient];
         }
 
@@ -144,12 +154,12 @@ namespace TriangleNet.Topology
         public void Onext(ref Otri ot)
         {
             //Lprev(ref ot);
-            ot.tri = tri;
+            ot.pool = pool; ot.index = index;
             ot.orient = minus1Mod3[orient];
 
             //ot.SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + ot.orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + ot.orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
         }
 
@@ -162,8 +172,8 @@ namespace TriangleNet.Topology
             orient = minus1Mod3[orient];
 
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
         }
 
@@ -173,8 +183,8 @@ namespace TriangleNet.Topology
         public void Oprev(ref Otri ot)
         {
             //Sym(ref ot);
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
 
             //ot.LnextSelf();
@@ -187,8 +197,8 @@ namespace TriangleNet.Topology
         public void Oprev()
         {
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
 
             //LnextSelf();
@@ -201,8 +211,8 @@ namespace TriangleNet.Topology
         public void Dnext(ref Otri ot)
         {
             //Sym(ref ot);
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
 
             //ot.LprevSelf();
@@ -215,8 +225,8 @@ namespace TriangleNet.Topology
         public void Dnext()
         {
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
 
             //LprevSelf();
@@ -229,12 +239,12 @@ namespace TriangleNet.Topology
         public void Dprev(ref Otri ot)
         {
             //Lnext(ref ot);
-            ot.tri = tri;
+            ot.pool = pool; ot.index = index;
             ot.orient = plus1Mod3[orient];
 
             //ot.SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + ot.orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + ot.orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
         }
 
@@ -247,8 +257,8 @@ namespace TriangleNet.Topology
             orient = plus1Mod3[orient];
 
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
         }
 
@@ -258,16 +268,16 @@ namespace TriangleNet.Topology
         public void Rnext(ref Otri ot)
         {
             //Sym(ref ot);
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
 
             //ot.LnextSelf();
             ot.orient = plus1Mod3[ot.orient];
 
             //ot.SymSelf();
-            code = tri.pool.neighbors[3 * ot.tri.index + ot.orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            code = pool.neighbors[3 * ot.index + ot.orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
         }
 
@@ -277,16 +287,16 @@ namespace TriangleNet.Topology
         public void Rnext()
         {
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
 
             //LnextSelf();
             orient = plus1Mod3[orient];
 
             //SymSelf();
-            code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
         }
 
@@ -296,16 +306,16 @@ namespace TriangleNet.Topology
         public void Rprev(ref Otri ot)
         {
             //Sym(ref ot);
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
 
             //ot.LprevSelf();
             ot.orient = minus1Mod3[ot.orient];
 
             //ot.SymSelf();
-            code = tri.pool.neighbors[3 * ot.tri.index + ot.orient];
-            ot.tri = new Triangle(tri.pool, code >> 2);
+            code = pool.neighbors[3 * ot.index + ot.orient];
+            ot.pool = pool; ot.index = code >> 2;
             ot.orient = code & 3;
         }
 
@@ -315,16 +325,16 @@ namespace TriangleNet.Topology
         public void Rprev()
         {
             //SymSelf();
-            int code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            int code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
 
             //LprevSelf();
             orient = minus1Mod3[orient];
 
             //SymSelf();
-            code = tri.pool.neighbors[3 * tri.index + orient];
-            tri = new Triangle(tri.pool, code >> 2);
+            code = pool.neighbors[3 * index + orient];
+            index = code >> 2;
             orient = code & 3;
         }
 
@@ -333,7 +343,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public Vertex Org()
         {
-            return tri.vertices[plus1Mod3[orient]];
+            return pool.vertices[3 * index + plus1Mod3[orient]];
         }
 
         /// <summary>
@@ -341,7 +351,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public Vertex Dest()
         {
-            return tri.vertices[minus1Mod3[orient]];
+            return pool.vertices[3 * index + minus1Mod3[orient]];
         }
 
         /// <summary>
@@ -349,7 +359,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public Vertex Apex()
         {
-            return tri.vertices[orient];
+            return pool.vertices[3 * index + orient];
         }
 
         /// <summary>
@@ -357,7 +367,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public void Copy(ref Otri ot)
         {
-            ot.tri = tri;
+            ot.pool = pool; ot.index = index;
             ot.orient = orient;
         }
 
@@ -366,7 +376,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public void Pivot(ref Osub os)
         {
-            os = tri.subsegs[orient];
+            os = pool.subsegs[3 * index + orient];
         }
 
         /// <summary>
@@ -374,7 +384,7 @@ namespace TriangleNet.Topology
         /// </summary>
         public bool Equals(Otri ot)
         {
-            return ((tri == ot.tri) && (orient == ot.orient));
+            return index == ot.index && orient == ot.orient && pool == ot.pool;
         }
 
         #endregion
@@ -386,7 +396,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void SetOrg(Vertex v)
         {
-            tri.vertices[plus1Mod3[orient]] = v;
+            pool.vertices[3 * index + plus1Mod3[orient]] = v;
         }
 
         /// <summary>
@@ -394,7 +404,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void SetDest(Vertex v)
         {
-            tri.vertices[minus1Mod3[orient]] = v;
+            pool.vertices[3 * index + minus1Mod3[orient]] = v;
         }
 
         /// <summary>
@@ -402,7 +412,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void SetApex(Vertex v)
         {
-            tri.vertices[orient] = v;
+            pool.vertices[3 * index + orient] = v;
         }
 
         /// <summary>
@@ -410,10 +420,9 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void Bond(ref Otri ot)
         {
-            var n = tri.pool.neighbors;
-            n[3 * tri.index + orient] = (ot.tri.index << 2) | ot.orient;
-
-            n[3 * ot.tri.index + ot.orient] = (tri.index << 2) | orient;
+            var n = pool.neighbors;
+            n[3 * index + orient] = (ot.index << 2) | ot.orient;
+            n[3 * ot.index + ot.orient] = (index << 2) | orient;
         }
 
         /// <summary>
@@ -425,7 +434,7 @@ namespace TriangleNet.Topology
         /// </remarks>
         internal void Dissolve(Triangle dummy)
         {
-            tri.pool.neighbors[3 * tri.index + orient] = dummy.index << 2;
+            pool.neighbors[3 * index + orient] = dummy.index << 2;
         }
 
         /// <summary>
@@ -433,7 +442,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void Infect()
         {
-            tri.infected = true;
+            pool.infected[index] = true;
         }
 
         /// <summary>
@@ -441,7 +450,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void Uninfect()
         {
-            tri.infected = false;
+            pool.infected[index] = false;
         }
 
         /// <summary>
@@ -449,7 +458,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal bool IsInfected()
         {
-            return tri.infected;
+            return pool.infected[index];
         }
 
         /// <summary>
@@ -457,7 +466,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void SegBond(ref Osub os)
         {
-            tri.subsegs[orient] = os;
+            pool.subsegs[3 * index + orient] = os;
             os.seg.triangles[os.orient] = this;
         }
 
@@ -466,7 +475,7 @@ namespace TriangleNet.Topology
         /// </summary>
         internal void SegDissolve(SubSegment dummy)
         {
-            tri.subsegs[orient].seg = dummy;
+            pool.subsegs[3 * index + orient].seg = dummy;
         }
 
         /// <summary>

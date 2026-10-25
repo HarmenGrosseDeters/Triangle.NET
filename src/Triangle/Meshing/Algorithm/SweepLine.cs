@@ -296,7 +296,7 @@ namespace TriangleNet.Meshing.Algorithm
                         tri.Sym(ref oppo);
 
                         // Test each edge only once.
-                        if (oppo.tri.id == Mesh.DUMMY || tri.tri.id > oppo.tri.id)
+                        if (oppo.index == 0 || tri.tri.id > oppo.tri.id)
                         {
                             continue;
                         }
@@ -779,7 +779,7 @@ namespace TriangleNet.Meshing.Algorithm
                 if (noPoly)
                 {
                     // Watch out for the case where all the input vertices are collinear.
-                    if (dissolveedge.tri.id != Mesh.DUMMY)
+                    if (dissolveedge.index != 0)
                     {
                         markorg = dissolveedge.Org();
                         if (markorg.label == 0)

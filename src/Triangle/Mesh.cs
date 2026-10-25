@@ -199,6 +199,9 @@ namespace TriangleNet
         {
             triangles = config.TrianglePool();
 
+            // A triangulation of n points has less than 2n triangles (refinement adds more).
+            triangles.EnsureCapacity(2 * points.Count + 16);
+
             Initialize();
 
             behavior = new Behavior();
@@ -650,7 +653,7 @@ namespace TriangleNet
             {
                 // Find the location of the vertex to be inserted.  Check if a good
                 // starting triangle has already been provided by the caller.
-                if (searchtri.tri.id == DUMMY)
+                if (searchtri.index == 0)
                 {
                     // Find a boundary triangle.
                     horiz.tri = dummytri;
@@ -701,7 +704,7 @@ namespace TriangleNet
                                 // This subsegment may be split only if it is an
                                 // internal boundary.
                                 horiz.Sym(ref testtri);
-                                enq = testtri.tri.id != DUMMY;
+                                enq = testtri.index != 0;
                             }
                             if (enq && (qualityMesher != null))
                             {
@@ -732,7 +735,7 @@ namespace TriangleNet
                 botright.Sym(ref botrcasing);
                 horiz.Sym(ref topright);
                 // Is there a second triangle?  (Or does this edge lie on a boundary?)
-                mirrorflag = topright.tri.id != DUMMY;
+                mirrorflag = topright.index != 0;
                 if (mirrorflag)
                 {
                     topright.Lnext();
@@ -756,12 +759,12 @@ namespace TriangleNet
                 horiz.SetOrg(newvertex);
 
                 // Set the region of a new triangle.
-                newbotright.tri.label = botright.tri.label;
+                newbotright.pool.labels[newbotright.index] = botright.tri.label;
 
                 if (behavior.VarArea)
                 {
                     // Set the area constraint of a new triangle.
-                    newbotright.tri.area = botright.tri.area;
+                    newbotright.pool.areas[newbotright.index] = botright.tri.area;
                 }
 
                 if (mirrorflag)
@@ -773,12 +776,12 @@ namespace TriangleNet
                     topright.SetOrg(newvertex);
 
                     // Set the region of another new triangle.
-                    newtopright.tri.label = topright.tri.label;
+                    newtopright.pool.labels[newtopright.index] = topright.tri.label;
 
                     if (behavior.VarArea)
                     {
                         // Set the area constraint of another new triangle.
-                        newtopright.tri.area = topright.tri.area;
+                        newtopright.pool.areas[newtopright.index] = topright.tri.area;
                     }
                 }
 
@@ -879,15 +882,15 @@ namespace TriangleNet
                 horiz.SetApex(newvertex);
 
                 // Set the region of the new triangles.
-                newbotleft.tri.label = horiz.tri.label;
-                newbotright.tri.label = horiz.tri.label;
+                newbotleft.pool.labels[newbotleft.index] = horiz.tri.label;
+                newbotright.pool.labels[newbotright.index] = horiz.tri.label;
 
                 if (behavior.VarArea)
                 {
                     // Set the area constraint of the new triangles.
                     area = horiz.tri.area;
-                    newbotleft.tri.area = area;
-                    newbotright.tri.area = area;
+                    newbotleft.pool.areas[newbotleft.index] = area;
+                    newbotright.pool.areas[newbotright.index] = area;
                 }
 
                 // There may be subsegments that need to be bonded
@@ -974,7 +977,7 @@ namespace TriangleNet
                 {
                     // Check if the edge is a boundary edge.
                     horiz.Sym(ref top);
-                    if (top.tri.id == DUMMY)
+                    if (top.index == 0)
                     {
                         // The edge is a boundary edge and cannot be flipped.
                         doflip = false;
@@ -1089,8 +1092,8 @@ namespace TriangleNet
                             // Assign region.
                             // TODO: check region ok (no Math.Min necessary)
                             region = Math.Min(top.tri.label, horiz.tri.label);
-                            top.tri.label = region;
-                            horiz.tri.label = region;
+                            top.pool.labels[top.index] = region;
+                            horiz.pool.labels[horiz.index] = region;
 
                             if (behavior.VarArea)
                             {
@@ -1106,8 +1109,8 @@ namespace TriangleNet
                                     area = 0.5 * (top.tri.area + horiz.tri.area);
                                 }
 
-                                top.tri.area = area;
-                                horiz.tri.area = area;
+                                top.pool.areas[top.index] = area;
+                                horiz.pool.areas[horiz.index] = area;
                             }
 
                             if (checkquality)
@@ -1137,7 +1140,7 @@ namespace TriangleNet
                     // Check for finishing a complete revolution about the new vertex, or
                     // falling outside of the triangulation. The latter will happen when
                     // a vertex is inserted at a boundary.
-                    if ((leftvertex == first) || (testtri.tri.id == DUMMY))
+                    if ((leftvertex == first) || (testtri.index == 0))
                     {
                         // We're done. Return a triangle whose origin is the new vertex.
                         horiz.Lnext(ref searchtri);
@@ -1736,7 +1739,7 @@ namespace TriangleNet
                     TriangleDealloc(botright.tri);
 
                     fliptri.Sym(ref gluetri);
-                    if (gluetri.tri.id != DUMMY)
+                    if (gluetri.index != 0)
                     {
                         gluetri.Lnext();
                         gluetri.Dnext(ref topright);

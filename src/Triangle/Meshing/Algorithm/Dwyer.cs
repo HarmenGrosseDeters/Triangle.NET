@@ -676,7 +676,7 @@ namespace TriangleNet.Meshing.Algorithm
                 if (noPoly)
                 {
                     // Watch out for the case where all the input vertices are collinear.
-                    if (dissolveedge.tri.id != Mesh.DUMMY)
+                    if (dissolveedge.index != 0)
                     {
                         markorg = dissolveedge.Org();
                         if (markorg.label == 0)

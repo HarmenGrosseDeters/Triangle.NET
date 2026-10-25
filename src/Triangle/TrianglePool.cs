@@ -71,6 +71,17 @@ namespace TriangleNet
             InitializeDummy();
         }
 
+        /// <summary>
+        /// Make sure the pool can hold the given number of triangles without growing.
+        /// </summary>
+        internal void EnsureCapacity(int capacity)
+        {
+            if (capacity + 1 > ids.Length)
+            {
+                Allocate(capacity);
+            }
+        }
+
         private void Allocate(int capacity)
         {
             capacity += 1; // The outer space triangle.

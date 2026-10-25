@@ -131,7 +131,7 @@ namespace TriangleNet.Meshing.Algorithm
             // adjacent to the first one.
             nextedge.Lnext(ref checkedge);
             checkedge.Sym();
-            if (checkedge.tri.id == Mesh.DUMMY)
+            if (checkedge.index == 0)
             {
                 // Go on to the next triangle.  There are only three boundary
                 // triangles, and this next triangle cannot be the third one,
@@ -158,7 +158,7 @@ namespace TriangleNet.Meshing.Algorithm
                     // vertices are collinear, and thus all the triangles are part of
                     // the bounding box.  Otherwise, the setvertexmark() call below
                     // will cause a bad pointer reference.
-                    if (dissolveedge.tri.id != Mesh.DUMMY)
+                    if (dissolveedge.index != 0)
                     {
                         markorg = dissolveedge.Org();
                         if (markorg.label == 0)
@@ -174,7 +174,7 @@ namespace TriangleNet.Meshing.Algorithm
                 // Get rid of the bounding box triangle.
                 mesh.TriangleDealloc(deadtriangle.tri);
                 // Do we need to turn the corner?
-                if (nextedge.tri.id == Mesh.DUMMY)
+                if (nextedge.index == 0)
                 {
                     // Turn the corner.
                     dissolveedge.Copy(ref nextedge);

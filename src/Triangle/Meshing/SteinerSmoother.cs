@@ -153,7 +153,7 @@ namespace TriangleNet.Meshing
 
             do
             {
-                if (tri.tri.id == Mesh.DUMMY || star.Count == MaxDegree)
+                if (tri.index == 0 || star.Count == MaxDegree)
                 {
                     return false;
                 }
@@ -277,7 +277,7 @@ namespace TriangleNet.Meshing
                 }
 
                 e.Sym(ref top);
-                if (top.tri.id == Mesh.DUMMY)
+                if (top.index == 0)
                 {
                     continue;
                 }
