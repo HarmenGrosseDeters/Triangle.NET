@@ -33,7 +33,7 @@ namespace TriangleNet.Examples
 
             // Find a seeding triangle (in this case, the point (2, 2) lies in
             // both rectangles).
-            var seed = (new TriangleQuadTree(mesh)).Query(2.0, 2.0) as Triangle;
+            var seed = (Triangle)(new TriangleQuadTree(mesh)).Query(2.0, 2.0);
 
             var iterator = new RegionIterator();
 

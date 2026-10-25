@@ -148,7 +148,7 @@ namespace TriangleNet.Voronoi
         /// <param name="map">Empty vertex map.</param>
         protected void ComputeEdges(Mesh mesh, Vertex[] vertices, Face[] faces, List<HalfEdge>[] map)
         {
-            Otri tri, neighbor = default;
+            Otri tri = default, neighbor = default;
             TriangleNet.Geometry.Vertex org, dest;
 
             double px, py;

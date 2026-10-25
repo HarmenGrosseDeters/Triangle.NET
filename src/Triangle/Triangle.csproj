@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <!-- A Triangle is a value (handle), comparing it with null is always false. -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS8073;CS0472</WarningsAsErrors>
     <RootNamespace>TriangleNet</RootNamespace>
     <AssemblyName>Triangle</AssemblyName>
     <Platforms>AnyCPU;x64</Platforms>

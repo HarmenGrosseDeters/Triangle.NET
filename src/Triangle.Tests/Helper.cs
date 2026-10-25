@@ -1,3 +1,4 @@
+using System;
 ﻿
 namespace TriangleNet.Tests
 {
@@ -51,9 +52,19 @@ namespace TriangleNet.Tests
             return poly;
         }
 
+        [ThreadStatic]
+        private static TrianglePool pool;
+
+        /// <summary>
+        /// The pool of the triangles created by <see cref="CreateTriangle"/> (triangles are
+        /// indices into the arrays of a pool; neighbors must be in the same pool).
+        /// </summary>
+        public static TrianglePool Pool => pool ?? (pool = new TrianglePool());
+
         public static Triangle CreateTriangle(int id, Vertex org, Vertex dest, Vertex apex)
         {
-            var t = new Triangle() { id = id, hash = id };
+            var t = Pool.Get();
+            t.id = id;
 
             // Node ordering 'plus 1 mod 3'.
             t.vertices[0] = apex;

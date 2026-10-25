@@ -18,7 +18,7 @@ namespace TriangleNet.Tools
     {
         QuadNode root;
 
-        internal ITriangle[] triangles;
+        internal Topology.Triangle[] triangles;
 
         internal int sizeBound;
         internal int maxDepth;

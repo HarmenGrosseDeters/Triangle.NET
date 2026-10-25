@@ -12,94 +12,127 @@ namespace TriangleNet.Topology
     using TriangleNet.Geometry;
 
     /// <summary>
-    /// The triangle data structure.
+    /// A triangle of a mesh: a handle to the triangle's data in the <see cref="TrianglePool"/>.
     /// </summary>
-    public class Triangle : ITriangle
+    /// <remarks>
+    /// The vertices, neighbors, subsegments and attributes of all triangles of a mesh are stored
+    /// in arrays of the pool (index-based storage, like delaunator or BurstTriangulator), not in
+    /// an object per triangle. This saves most of the garbage collection work for large meshes.
+    /// Two handles are equal, if they refer to the same triangle.
+    /// </remarks>
+    public readonly struct Triangle : ITriangle, IEquatable<Triangle>
     {
-        // Hash for dictionary. Will be set by mesh instance.
-        internal int hash;
+        internal readonly TrianglePool pool;
+
+        // Position in the arrays of the pool (0 is the "outer space" triangle of the mesh).
+        internal readonly int index;
+
+        internal Triangle(TrianglePool pool, int index)
+        {
+            this.pool = pool;
+            this.index = index;
+        }
+
+        // Hash for dictionary (the position in the pool, -1 for the outer space triangle).
+        internal int hash => index - 1;
 
         // The ID is only used for mesh output.
-        internal int id;
+        internal int id
+        {
+            get => pool.ids[index];
+            set => pool.ids[index] = value;
+        }
 
-#if FIELD_LAYOUT
-        // Fields with ref-returning indexers (one heap object per triangle, also on
-        // netstandard2.0, e.g. .NET Framework 4.8). Build with -p:TriangleLayout=Fields.
-        private Vertex vertex0, vertex1, vertex2;
-        private Otri neighbor0, neighbor1, neighbor2;
-        private Osub subseg0, subseg1, subseg2;
+        internal int label
+        {
+            get => pool.labels[index];
+            set => pool.labels[index] = value;
+        }
 
-        internal VertexList vertices => new VertexList(this);
-        internal NeighborList neighbors => new NeighborList(this);
-        internal SubsegList subsegs => new SubsegList(this);
-#elif NET8_0_OR_GREATER && !ARRAY_LAYOUT
-        // The vertices, adjoining triangles and subsegments are stored inline. With arrays, a
-        // triangle consists of four objects on the heap, which make up more than half of all
-        // allocations of a quality mesh and a large part of the garbage collection time.
-        internal Buffer3<Vertex> vertices;
-        internal Buffer3<Otri> neighbors;
-        internal Buffer3<Osub> subsegs;
-#else
-        internal Vertex[] vertices = new Vertex[3];
-        internal Otri[] neighbors = new Otri[3];
-        internal Osub[] subsegs = new Osub[3];
-#endif
-        internal int label;
-        internal double area;
-        internal bool infected;
+        internal double area
+        {
+            get => pool.areas[index];
+            set => pool.areas[index] = value;
+        }
+
+        internal bool infected
+        {
+            get => pool.infected[index];
+            set => pool.infected[index] = value;
+        }
 
         // Marks the triangle as visited in a search (see Mesh.NextMark).
-        internal int mark;
+        internal int mark
+        {
+            get => pool.marks[index];
+            set => pool.marks[index] = value;
+        }
+
+        internal VertexList vertices => new VertexList(pool.vertices, 3 * index);
+        internal NeighborList neighbors => new NeighborList(pool, 3 * index);
+        internal SubsegList subsegs => new SubsegList(pool.subsegs, 3 * index);
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="Triangle" /> class.
+        /// Set the neighbor opposite to the given corner.
         /// </summary>
-        public Triangle()
+        internal void SetNeighbor(int k, Otri ot)
         {
-            // The vertices, adjoining subsegments and triangles are null (default).
+            pool.neighbors[3 * index + k] = (ot.tri.index << 2) | ot.orient;
         }
 
-#if FIELD_LAYOUT
+        /// <summary>
+        /// Gets a value indicating whether the handle refers to no triangle.
+        /// </summary>
+        internal bool IsNull => pool == null;
+
         internal readonly struct VertexList
         {
-            private readonly Triangle o;
+            private readonly Vertex[] a;
+            private readonly int offset;
 
-            public VertexList(Triangle o) { this.o = o; }
+            public VertexList(Vertex[] a, int offset) { this.a = a; this.offset = offset; }
 
-            public ref Vertex this[int index]
+            public ref Vertex this[int k]
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => ref index == 0 ? ref o.vertex0 : ref index == 1 ? ref o.vertex1 : ref o.vertex2;
-            }
-        }
-
-        internal readonly struct NeighborList
-        {
-            private readonly Triangle o;
-
-            public NeighborList(Triangle o) { this.o = o; }
-
-            public ref Otri this[int index]
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => ref index == 0 ? ref o.neighbor0 : ref index == 1 ? ref o.neighbor1 : ref o.neighbor2;
+                get => ref a[offset + k];
             }
         }
 
         internal readonly struct SubsegList
         {
-            private readonly Triangle o;
+            private readonly Osub[] a;
+            private readonly int offset;
 
-            public SubsegList(Triangle o) { this.o = o; }
+            public SubsegList(Osub[] a, int offset) { this.a = a; this.offset = offset; }
 
-            public ref Osub this[int index]
+            public ref Osub this[int k]
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => ref index == 0 ? ref o.subseg0 : ref index == 1 ? ref o.subseg1 : ref o.subseg2;
+                get => ref a[offset + k];
             }
         }
 
-#endif
+        internal readonly struct NeighborList
+        {
+            private readonly TrianglePool pool;
+            private readonly int offset;
+
+            public NeighborList(TrianglePool pool, int offset) { this.pool = pool; this.offset = offset; }
+
+            public Otri this[int k]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    int code = pool.neighbors[offset + k];
+                    return new Otri { tri = new Triangle(pool, code >> 2), orient = code & 3 };
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                set => pool.neighbors[offset + k] = (value.tri.index << 2) | value.orient;
+            }
+        }
 
         #region Public properties
 
@@ -157,13 +190,15 @@ namespace TriangleNet.Topology
         /// <returns>The neighbor opposite of vertex with given index.</returns>
         public ITriangle GetNeighbor(int index)
         {
-            return neighbors[index].tri.hash == Mesh.DUMMY ? null : neighbors[index].tri;
+            var neighbor = neighbors[index].tri;
+            return neighbor.hash == Mesh.DUMMY ? null : (ITriangle)neighbor;
         }
 
         /// <inheritdoc />
         public int GetNeighborID(int index)
         {
-            return neighbors[index].tri.hash == Mesh.DUMMY ? -1 : neighbors[index].tri.id;
+            var neighbor = neighbors[index].tri;
+            return neighbor.hash == Mesh.DUMMY ? -1 : neighbor.id;
         }
 
         /// <summary>
@@ -179,10 +214,26 @@ namespace TriangleNet.Topology
         #endregion
 
         /// <inheritdoc />
+        public bool Equals(Triangle other) => index == other.index && pool == other.pool;
+
+        /// <inheritdoc />
+        public override bool Equals(object obj) => obj is Triangle other && Equals(other);
+
+        /// <inheritdoc />
         public override int GetHashCode()
         {
             return hash;
         }
+
+        /// <summary>
+        /// Equality of handles (same triangle).
+        /// </summary>
+        public static bool operator ==(Triangle a, Triangle b) => a.Equals(b);
+
+        /// <summary>
+        /// Inequality of handles.
+        /// </summary>
+        public static bool operator !=(Triangle a, Triangle b) => !a.Equals(b);
 
         /// <inheritdoc />
         public override string ToString()

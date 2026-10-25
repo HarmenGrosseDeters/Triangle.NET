@@ -56,7 +56,7 @@ namespace MeshExplorer.Topology
 
         public void Update(Otri otri)
         {
-            if (otri.Triangle == null || otri.Triangle.ID < 0)
+            if (otri.Triangle.Equals(default(TriangleNet.Topology.Triangle)) || otri.Triangle.ID < 0)
             {
                 renderer.SelectTriangle(null, null, null);
             }

@@ -179,17 +179,9 @@ namespace TriangleNet
             dummysub.subsegs[0].seg = dummysub;
             dummysub.subsegs[1].seg = dummysub;
 
-            // Set up 'dummytri', the 'triangle' that occupies "outer space."
-            dummytri = new Triangle();
-            dummytri.hash = dummytri.id = DUMMY;
-
-            // Initialize the three adjoining triangles to be "outer space." These
-            // will eventually be changed by various bonding operations, but their
-            // values don't really matter, as long as they can legally be
-            // dereferenced.
-            dummytri.neighbors[0].tri = dummytri;
-            dummytri.neighbors[1].tri = dummytri;
-            dummytri.neighbors[2].tri = dummytri;
+            // Set up 'dummytri', the 'triangle' that occupies "outer space" (position 0 of the
+            // triangle pool, its id is DUMMY and its three adjoining triangles are "outer space").
+            dummytri = triangles.Dummy;
 
             // Initialize the three adjoining subsegments of 'dummytri' to be
             // the omnipresent subsegment.
@@ -205,14 +197,17 @@ namespace TriangleNet
         /// </summary>
         public Mesh(Configuration config, IList<Vertex> points)
         {
+            triangles = config.TrianglePool();
+
+            // A triangulation of n points has less than 2n triangles (refinement adds more).
+            triangles.EnsureCapacity(2 * points.Count + 16);
+
             Initialize();
 
             behavior = new Behavior();
 
             vertices = new Dictionary<int, Vertex>(points.Count);
             subsegs = new Dictionary<int, SubSegment>();
-
-            triangles = config.TrianglePool();
 
             flipstack = new Stack<Otri>();
 
@@ -542,9 +537,7 @@ namespace TriangleNet
             tri.subsegs[1].seg = dummysub;
             tri.subsegs[2].seg = dummysub;
 
-            tri.neighbors[0].tri = dummytri;
-            tri.neighbors[1].tri = dummytri;
-            tri.neighbors[2].tri = dummytri;
+            // The adjoining triangles are "outer space" (see TrianglePool.Get).
 
             newotri.tri = tri;
             newotri.orient = 0;
@@ -660,7 +653,7 @@ namespace TriangleNet
             {
                 // Find the location of the vertex to be inserted.  Check if a good
                 // starting triangle has already been provided by the caller.
-                if (searchtri.tri.id == DUMMY)
+                if (searchtri.index == 0)
                 {
                     // Find a boundary triangle.
                     horiz.tri = dummytri;
@@ -711,7 +704,7 @@ namespace TriangleNet
                                 // This subsegment may be split only if it is an
                                 // internal boundary.
                                 horiz.Sym(ref testtri);
-                                enq = testtri.tri.id != DUMMY;
+                                enq = testtri.index != 0;
                             }
                             if (enq && (qualityMesher != null))
                             {
@@ -742,7 +735,7 @@ namespace TriangleNet
                 botright.Sym(ref botrcasing);
                 horiz.Sym(ref topright);
                 // Is there a second triangle?  (Or does this edge lie on a boundary?)
-                mirrorflag = topright.tri.id != DUMMY;
+                mirrorflag = topright.index != 0;
                 if (mirrorflag)
                 {
                     topright.Lnext();
@@ -766,12 +759,12 @@ namespace TriangleNet
                 horiz.SetOrg(newvertex);
 
                 // Set the region of a new triangle.
-                newbotright.tri.label = botright.tri.label;
+                newbotright.pool.labels[newbotright.index] = botright.tri.label;
 
                 if (behavior.VarArea)
                 {
                     // Set the area constraint of a new triangle.
-                    newbotright.tri.area = botright.tri.area;
+                    newbotright.pool.areas[newbotright.index] = botright.tri.area;
                 }
 
                 if (mirrorflag)
@@ -783,12 +776,12 @@ namespace TriangleNet
                     topright.SetOrg(newvertex);
 
                     // Set the region of another new triangle.
-                    newtopright.tri.label = topright.tri.label;
+                    newtopright.pool.labels[newtopright.index] = topright.tri.label;
 
                     if (behavior.VarArea)
                     {
                         // Set the area constraint of another new triangle.
-                        newtopright.tri.area = topright.tri.area;
+                        newtopright.pool.areas[newtopright.index] = topright.tri.area;
                     }
                 }
 
@@ -889,15 +882,15 @@ namespace TriangleNet
                 horiz.SetApex(newvertex);
 
                 // Set the region of the new triangles.
-                newbotleft.tri.label = horiz.tri.label;
-                newbotright.tri.label = horiz.tri.label;
+                newbotleft.pool.labels[newbotleft.index] = horiz.tri.label;
+                newbotright.pool.labels[newbotright.index] = horiz.tri.label;
 
                 if (behavior.VarArea)
                 {
                     // Set the area constraint of the new triangles.
                     area = horiz.tri.area;
-                    newbotleft.tri.area = area;
-                    newbotright.tri.area = area;
+                    newbotleft.pool.areas[newbotleft.index] = area;
+                    newbotright.pool.areas[newbotright.index] = area;
                 }
 
                 // There may be subsegments that need to be bonded
@@ -940,7 +933,7 @@ namespace TriangleNet
             // subsegment is found.
             success = InsertVertexResult.Successful;
 
-            if (newvertex.tri.tri != null)
+            if (!newvertex.tri.tri.IsNull)
             {
                 // Store the coordinates of the triangle that contains newvertex.
                 newvertex.tri.SetOrg(rightvertex);
@@ -984,7 +977,7 @@ namespace TriangleNet
                 {
                     // Check if the edge is a boundary edge.
                     horiz.Sym(ref top);
-                    if (top.tri.id == DUMMY)
+                    if (top.index == 0)
                     {
                         // The edge is a boundary edge and cannot be flipped.
                         doflip = false;
@@ -1099,8 +1092,8 @@ namespace TriangleNet
                             // Assign region.
                             // TODO: check region ok (no Math.Min necessary)
                             region = Math.Min(top.tri.label, horiz.tri.label);
-                            top.tri.label = region;
-                            horiz.tri.label = region;
+                            top.pool.labels[top.index] = region;
+                            horiz.pool.labels[horiz.index] = region;
 
                             if (behavior.VarArea)
                             {
@@ -1116,8 +1109,8 @@ namespace TriangleNet
                                     area = 0.5 * (top.tri.area + horiz.tri.area);
                                 }
 
-                                top.tri.area = area;
-                                horiz.tri.area = area;
+                                top.pool.areas[top.index] = area;
+                                horiz.pool.areas[horiz.index] = area;
                             }
 
                             if (checkquality)
@@ -1147,7 +1140,7 @@ namespace TriangleNet
                     // Check for finishing a complete revolution about the new vertex, or
                     // falling outside of the triangulation. The latter will happen when
                     // a vertex is inserted at a boundary.
-                    if ((leftvertex == first) || (testtri.tri.id == DUMMY))
+                    if ((leftvertex == first) || (testtri.index == 0))
                     {
                         // We're done. Return a triangle whose origin is the new vertex.
                         horiz.Lnext(ref searchtri);
@@ -1727,7 +1720,7 @@ namespace TriangleNet
                     TriangleDealloc(botleft.tri);
                     TriangleDealloc(botright.tri);
                 }
-                else if (flipstack.Peek().tri == null) // Dummy flip
+                else if (flipstack.Peek().tri.IsNull) // Dummy flip
                 {
                     // Restore two triangles that were split into four triangles,
                     // so they are again two triangles.
@@ -1746,7 +1739,7 @@ namespace TriangleNet
                     TriangleDealloc(botright.tri);
 
                     fliptri.Sym(ref gluetri);
-                    if (gluetri.tri.id != DUMMY)
+                    if (gluetri.index != 0)
                     {
                         gluetri.Lnext();
                         gluetri.Dnext(ref topright);

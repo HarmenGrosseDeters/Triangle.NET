@@ -83,7 +83,7 @@ namespace TriangleNet.Tests.Review
 
             var mesh = poly.Triangulate(new ConstraintOptions { SnapTolerance = 0.1 });
 
-            Assert.That(mesh.Triangles.Sum(MeshAssert.Area), Is.GreaterThan(99.0));
+            Assert.That(mesh.Triangles.Sum(t => MeshAssert.Area(t)), Is.GreaterThan(99.0));
         }
 
         [Test]

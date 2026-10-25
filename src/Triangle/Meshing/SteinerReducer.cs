@@ -167,7 +167,7 @@ namespace TriangleNet.Meshing
 
             do
             {
-                if (tri.tri.id == Mesh.DUMMY)
+                if (tri.index == 0)
                 {
                     return false;
                 }
@@ -278,7 +278,7 @@ namespace TriangleNet.Meshing
 
             do
             {
-                if (tri.tri.id == Mesh.DUMMY || polygon.Count == MaxDegree)
+                if (tri.index == 0 || polygon.Count == MaxDegree)
                 {
                     return false;
                 }
