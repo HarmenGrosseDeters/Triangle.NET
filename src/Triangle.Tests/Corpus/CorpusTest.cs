@@ -43,6 +43,7 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_CORPUS_ROUND count triangles flipped by rounding to this grid (default 0 = off,
     ///                         the output grid if set)
     ///   TRIANGLE_CORPUS_ANGLES comma separated minimum angles (default 0,20; 0 = no quality)
+    ///   TRIANGLE_CORPUS_STEINER Steiner point limit (default 100000)
     ///   TRIANGLE_CORPUS_REDUCE 1 = QualityOptions.ReduceSteinerPoints
     ///   TRIANGLE_CORPUS_SMOOTH QualityOptions.SmoothingSteps (default 0)
     ///   TRIANGLE_CORPUS_CONFORMING 1 = ConstraintOptions.ConformingDelaunay
@@ -54,7 +55,9 @@ namespace TriangleNet.Tests.Corpus
     {
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(120);
 
-        private const int SteinerPoints = 100000;
+        // Steiner point limit (TRIANGLE_CORPUS_STEINER, default 100000).
+        private static int SteinerPoints =>
+            int.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_STEINER"), out var n) ? n : 100000;
 
         [Test]
         public void GeosXmlTestSuite()
