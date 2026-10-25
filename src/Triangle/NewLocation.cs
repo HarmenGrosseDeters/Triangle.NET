@@ -2466,7 +2466,7 @@ namespace TriangleNet
 
                 badotri.Sym(ref neighbor);
 
-                if (neighbor.tri.id == Mesh.DUMMY)
+                if (neighbor.index == 0)
                 {
                     break;
                 }

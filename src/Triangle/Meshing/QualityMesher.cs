@@ -55,7 +55,8 @@ namespace TriangleNet.Meshing
 
             newLocation = new NewLocation(mesh, predicates);
 
-            newvertex_tri = new Triangle();
+            // Holds the vertices of the triangle that contains a new vertex (not part of the mesh).
+            newvertex_tri = new TrianglePool(1).Get();
         }
 
         /// <summary>
@@ -165,7 +166,7 @@ namespace TriangleNet.Meshing
             // Check one neighbor of the subsegment.
             testsubseg.Pivot(ref neighbortri);
             // Does the neighbor exist, or is this a boundary edge?
-            if (neighbortri.tri.id != Mesh.DUMMY)
+            if (neighbortri.index != 0)
             {
                 sides++;
                 // Find a vertex opposite this subsegment.
@@ -195,7 +196,7 @@ namespace TriangleNet.Meshing
             testsubseg.Sym(ref testsym);
             testsym.Pivot(ref neighbortri);
             // Does the neighbor exist, or is this a boundary edge?
-            if (neighbortri.tri.id != Mesh.DUMMY)
+            if (neighbortri.index != 0)
             {
                 sides++;
                 // Find the other vertex opposite this subsegment.
@@ -572,7 +573,7 @@ namespace TriangleNet.Meshing
 
                     // Now, check the other side of the segment, if there's a triangle there.
                     enctri.Sym(ref testtri);
-                    if (testtri.tri.id != Mesh.DUMMY)
+                    if (testtri.index != 0)
                     {
                         // Is the destination shared with another segment?
                         testtri.Lnext();
@@ -1119,7 +1120,7 @@ namespace TriangleNet.Meshing
             Otri tri = default(Otri), neighbor = default(Otri);
             Osub sub = default(Osub);
 
-            horiz.tri.mark = stamp;
+            horiz.pool.marks[horiz.index] = stamp;
             cavityStack.Push(horiz);
 
             while (cavityStack.Count > 0)
@@ -1134,7 +1135,7 @@ namespace TriangleNet.Meshing
                     {
                         tri.Sym(ref neighbor);
 
-                        if (neighbor.tri.id != Mesh.DUMMY)
+                        if (neighbor.index != 0)
                         {
                             if (neighbor.tri.mark == stamp)
                             {
@@ -1144,7 +1145,7 @@ namespace TriangleNet.Meshing
                             // Same test (and argument order) as in Mesh.InsertVertex.
                             if (predicates.InCircle(tri.Dest(), v, tri.Org(), neighbor.Apex()) > 0.0)
                             {
-                                neighbor.tri.mark = stamp;
+                                neighbor.pool.marks[neighbor.index] = stamp;
                                 cavityCount++;
                                 cavityStack.Push(neighbor);
                                 continue;
@@ -1212,7 +1213,7 @@ namespace TriangleNet.Meshing
                     sub.Sym(ref sym);
                     sym.Pivot(ref neighbor);
 
-                    if (neighbor.tri.id != Mesh.DUMMY && neighbor.tri.mark == stamp)
+                    if (neighbor.index != 0 && neighbor.tri.mark == stamp)
                     {
                         return false;
                     }
@@ -1379,7 +1380,7 @@ namespace TriangleNet.Meshing
 
             tri.Sym(ref sym);
 
-            if (sym.tri.id != Mesh.DUMMY)
+            if (sym.index != 0)
             {
                 apex = sym.Apex();
 

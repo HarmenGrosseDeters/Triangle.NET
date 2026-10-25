@@ -77,7 +77,7 @@ namespace TriangleNet.Tests.Review
                 new QualityOptions { MaximumAngle = 100, UseLegacyRefinement = legacy });
 
             MeshAssert.IsValid(mesh);
-            double max = mesh.Triangles.Max(MaximumAngle);
+            double max = mesh.Triangles.Max(t => MaximumAngle(t));
             Assert.That(max, Is.LessThanOrEqualTo(100 + 1e-6));
         }
 

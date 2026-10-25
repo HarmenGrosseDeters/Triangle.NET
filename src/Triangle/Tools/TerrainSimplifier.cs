@@ -191,12 +191,12 @@ namespace TriangleNet.Tools
 
                     var result = Locate(mesh, p, ref tri);
 
-                    if (result == LocateResult.Outside || tri.tri.id == Mesh.DUMMY)
+                    if (result == LocateResult.Outside || tri.index == 0)
                     {
                         // On the boundary (or outside due to snapping of the break lines).
                         tri.Sym();
 
-                        if (tri.tri.id == Mesh.DUMMY)
+                        if (tri.index == 0)
                         {
                             tri.tri = mesh.triangles.First();
                             continue;
@@ -345,7 +345,7 @@ namespace TriangleNet.Tools
                     {
                         edge.Sym(ref sym);
 
-                        if (sym.tri.id != Mesh.DUMMY)
+                        if (sym.index != 0)
                         {
                             ring.Add(sym.tri);
                         }
@@ -614,7 +614,7 @@ namespace TriangleNet.Tools
             {
                 tri.Sym();
 
-                if (tri.tri.id == Mesh.DUMMY)
+                if (tri.index == 0)
                 {
                     tri.Sym();
                     return mesh.locator.Locate(p, ref tri);
@@ -644,7 +644,7 @@ namespace TriangleNet.Tools
                 return false;
             }
 
-            if (tri.tri.id == Mesh.DUMMY)
+            if (tri.index == 0)
             {
                 tri.Sym();
             }
@@ -691,9 +691,9 @@ namespace TriangleNet.Tools
                 star.Add(t.tri);
                 t.Onext();
             }
-            while (t.tri.id != Mesh.DUMMY && t.tri != start.tri);
+            while (t.index != 0 && t.tri != start.tri);
 
-            if (t.tri.id == Mesh.DUMMY)
+            if (t.index == 0)
             {
                 // Boundary vertex: the other direction.
                 t = start;
@@ -702,7 +702,7 @@ namespace TriangleNet.Tools
                 {
                     t.Oprev();
 
-                    if (t.tri.id == Mesh.DUMMY)
+                    if (t.index == 0)
                     {
                         break;
                     }
@@ -860,7 +860,7 @@ namespace TriangleNet.Tools
                 {
                     edge.Sym(ref sym);
 
-                    if (sym.tri.id == Mesh.DUMMY || visited.Contains(sym.tri))
+                    if (sym.index == 0 || visited.Contains(sym.tri))
                     {
                         continue;
                     }
@@ -937,12 +937,12 @@ namespace TriangleNet.Tools
 
                 var result = mesh.locator.Locate(new Point(x, y), ref tri);
 
-                if (result == LocateResult.Outside || tri.tri.id == Mesh.DUMMY)
+                if (result == LocateResult.Outside || tri.index == 0)
                 {
                     tri.Sym();
                 }
 
-                if (tri.tri.id == Mesh.DUMMY)
+                if (tri.index == 0)
                 {
                     // Outside of the terrain model: use the nearest point.
                     var v = copies.OrderBy(p => (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y)).First();

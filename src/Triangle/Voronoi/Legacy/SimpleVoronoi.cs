@@ -169,11 +169,11 @@ namespace TriangleNet.Voronoi.Legacy
             f_init.Onext(ref f_next);
 
             // Check if f_init lies on the boundary of the triangulation.
-            if (f_next.tri.id == Mesh.DUMMY)
+            if (f_next.index == 0)
             {
                 f_init.Oprev(ref f_prev);
 
-                if (f_prev.tri.id != Mesh.DUMMY)
+                if (f_prev.index != 0)
                 {
                     f_init.Copy(ref f_next);
                     // Move one triangle clockwise
@@ -183,7 +183,7 @@ namespace TriangleNet.Voronoi.Legacy
             }
 
             // Go counterclockwise until we reach the border or the initial triangle.
-            while (f_next.tri.id != Mesh.DUMMY)
+            while (f_next.index != 0)
             {
                 // Add circumcenter of current triangle
                 vpoints.Add(points[f.tri.id]);
@@ -241,7 +241,7 @@ namespace TriangleNet.Voronoi.Legacy
             f_init.Copy(ref f);
             f.Oprev(ref f_prev);
 
-            while (f_prev.tri.id != Mesh.DUMMY)
+            while (f_prev.index != 0)
             {
                 vpoints.Add(points[f_prev.tri.id]);
                 region.AddNeighbor(f_prev.tri.id, regions[f_prev.Apex().id]);

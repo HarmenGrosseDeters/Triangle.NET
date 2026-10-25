@@ -418,7 +418,7 @@ namespace TriangleNet.IO
                 for (tri.orient = 0; tri.orient < 3; tri.orient++)
                 {
                     tri.Sym(ref trisym);
-                    if ((tri.tri.id < trisym.tri.id) || (trisym.tri.id == Mesh.DUMMY))
+                    if ((tri.tri.id < trisym.tri.id) || (trisym.index == 0))
                     {
                         var p1 = tri.Org();
                         var p2 = tri.Dest();
@@ -444,7 +444,7 @@ namespace TriangleNet.IO
                             else
                             {
                                 writer.WriteLine("{0} {1} {2} {3}", index, p1.id, p2.id,
-                                        trisym.tri.id == Mesh.DUMMY ? "1" : "0");
+                                        trisym.index == 0 ? "1" : "0");
                             }
                         }
                         else

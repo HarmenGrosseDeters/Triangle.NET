@@ -38,7 +38,7 @@ namespace TriangleNet.Tests.Robustness
             var plain = reference.Segments.Count == 0
                 ? (Mesh)new GenericMesher().Triangulate(reference.Points)
                 : (Mesh)reference.Triangulate(new ConstraintOptions { SnapTolerance = c.Snap });
-            double area = plain.Triangles.Sum(MeshInvariants.Area);
+            double area = plain.Triangles.Sum(t => MeshInvariants.Area(t));
 
             var errors = MeshInvariants.Check(mesh, input, reduced, area);
 
@@ -71,7 +71,7 @@ namespace TriangleNet.Tests.Robustness
 
             if (c.MaxArea > 0)
             {
-                Assert.That(reduced.Triangles.Max(MeshInvariants.Area), Is.LessThanOrEqualTo(c.MaxArea));
+                Assert.That(reduced.Triangles.Max(t => MeshInvariants.Area(t)), Is.LessThanOrEqualTo(c.MaxArea));
             }
         }
 

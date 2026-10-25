@@ -27,7 +27,7 @@ namespace TriangleNet.Tests.Review
             for (int i = 0; i < 10; i++) pool.Get();
 
             var other = new TrianglePool();
-            Triangle foreign = null;
+            Triangle foreign = default;
             for (int i = 0; i < 11; i++) foreign = other.Get(); // hash == 10
 
             Assert.That(foreign.hash, Is.EqualTo(pool.Capacity));
@@ -66,11 +66,8 @@ namespace TriangleNet.Tests.Review
 
             pool.Clear();
 
-            var field = typeof(TrianglePool).GetField("pool",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var blocks = (Triangle[][])field.GetValue(pool);
-
-            int remaining = blocks.Where(b => b != null).Sum(b => b.Count(t => t != null));
+            // No references to vertices or subsegments of the old triangles remain.
+            int remaining = pool.vertices.Count(v => v != null) + pool.subsegs.Count(s => s.seg != null);
 
             Assert.That(pool.Count, Is.EqualTo(0));
             Assert.That(remaining, Is.EqualTo(0), "Pool still references triangles after Clear().");

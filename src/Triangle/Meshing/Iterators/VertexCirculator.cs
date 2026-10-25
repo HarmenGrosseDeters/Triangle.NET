@@ -54,7 +54,7 @@ namespace TriangleNet.Meshing.Iterators
             // A new list for each call (enumerations may be nested).
             var cache = new List<Otri>();
 
-            if (vertex.tri.tri == null || vertex.type == VertexType.UndeadVertex)
+            if (vertex.tri.tri.IsNull || vertex.type == VertexType.UndeadVertex)
             {
                 // Not part of the mesh topology (e.g. a duplicate input vertex).
                 return cache;
@@ -67,7 +67,7 @@ namespace TriangleNet.Meshing.Iterators
             init.Copy(ref next);
 
             // Move counter-clockwise around the vertex.
-            while (next.tri.id != Mesh.DUMMY)
+            while (next.index != 0)
             {
                 cache.Add(next);
 
@@ -80,7 +80,7 @@ namespace TriangleNet.Meshing.Iterators
                 }
             }
 
-            if (next.tri.id == Mesh.DUMMY)
+            if (next.index == 0)
             {
                 // We reached the boundary. To get all adjacent triangles, start
                 // again at init triangle and now move clockwise.
@@ -95,7 +95,7 @@ namespace TriangleNet.Meshing.Iterators
 
                 next.Oprev();
 
-                while (next.tri.id != Mesh.DUMMY)
+                while (next.index != 0)
                 {
                     cache.Insert(0, next);
 

@@ -60,7 +60,7 @@ namespace TriangleNet
         internal void Reset()
         {
             sampler.Reset();
-            recenttri.tri = null; // No triangle has been visited yet.
+            recenttri.tri = default; // No triangle has been visited yet.
         }
 
         /// <summary>
@@ -224,7 +224,7 @@ namespace TriangleNet
                     }
                 }
                 // Check for walking right out of the triangulation.
-                if (searchtri.tri.id == Mesh.DUMMY)
+                if (searchtri.index == 0)
                 {
                     // Go back to the last triangle.
                     backtracktri.Copy(ref searchtri);
@@ -287,7 +287,7 @@ namespace TriangleNet
 
             // If a recently encountered triangle has been recorded and has not been
             // deallocated, test it as a good starting point.
-            if (recenttri.tri != null)
+            if (!recenttri.tri.IsNull)
             {
                 if (!Otri.IsDead(recenttri.tri))
                 {
