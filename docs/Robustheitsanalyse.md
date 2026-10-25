@@ -623,6 +623,59 @@ conforming Delaunay, Fläche, Segmente, gesperrte Segmente, Winkelgarantie), daz
 Steiner-Punkte ändern sich, Segmente identisch, nicht mehr schlechte Dreiecke, kleinster Winkel
 sinkt beim Glätten nie, Maximalfläche und -winkel, Raster, `UserTest`, Determinismus.
 
+### Breite Bewertung am Korpus
+
+Alle 201 Herne-Kacheln (Raster 1 cm, Keil 3 cm), dazu Herne nur mit Snap, Natural Earth und die
+CDT-Testfälle (`TRIANGLE_CORPUS_REDUCE`, `TRIANGLE_CORPUS_SMOOTH`,
+`TRIANGLE_CORPUS_CONFORMING`). Alle Läufe gültig (keine Fehler, keine Kippungen beim Runden im
+Rastermodus). Zeiten sind die Summe der Einzelläufe:
+
+| Herne, Raster + Keil | Dreiecke 20° | Zeit 20° | Dreiecke 30° | schlecht 30° | Zeit 30° |
+|----------------------|-------------:|---------:|-------------:|-------------:|---------:|
+| ohne | 2.965.369 | 66 s | 6.586.381 | 145.925 | 102 s |
+| ausdünnen | −5,9 % | 112 s | −8,7 % | 143.794 | 196 s |
+| 3× glätten | ±0 | 96 s | ±0 | 142.260 | 159 s |
+| 3× glätten + ausdünnen | −6,7 % | 153 s | −11,6 % | 140.621 | 275 s |
+| conforming, ohne | 4.288.070 | 67 s | 8.100.427 | 211.063 | 96 s |
+| conforming, ausdünnen | −6,4 % | 124 s | −9,3 % | 207.402 | 208 s |
+| conforming, 3× glätten | ±0 | 113 s | ±0 | 204.608 | 171 s |
+| conforming, 3× glätten + ausdünnen | −7,2 % | 186 s | −12,4 % | 202.069 | 323 s |
+
+Nur Snap (ohne Raster): −2,5 % bis −4 % Dreiecke. Natural Earth und CDT-Fälle: unter 1 %
+(dort hängen die schlechten Dreiecke an winzigen Eingabewinkeln und am Steiner-Limit).
+
+Bewertung: Lohnt sich, wenn die Netzgröße zählt (Speicher, Weiterverarbeitung), vor allem im
+Rastermodus bei 30°: rund 10–12 % weniger Dreiecke und 3–4 % weniger schlechte, bei 2–3,4-facher
+Laufzeit. Glätten allein verbessert die Qualität nur wenig (−2,5 bis −3 % schlechte Dreiecke).
+Als Standard nicht sinnvoll, als Option für große Exporte ja.
+
+### Pooling
+
+Kurzlebige Objekte (Umkreismittelpunkte, Iteratoren, Hilfsarrays) sind für den .NET-GC billig. Teuer
+sind die langlebigen Netzobjekte, die bei jeder Sammlung kopiert werden: Allokationsprofil der
+Herne-Kachel mit `Arrays` (wie net48): `Osub[]` 13 %, `Otri[]` 13 %, `Triangle` 11 %, `Vertex[]` 9 %,
+dazu Punkte, Vertices und Dictionary-Einträge. `ArrayPool<T>` hilft dafür nicht (die Arrays leben so
+lange wie das Netz), die Hilfsarrays der Prädikate liegen schon im Thread-Arbeitsspeicher.
+
+Was hilft, gibt es schon: `TrianglePool` hält die Dreiecke eines Netzes und lässt sich über
+`Configuration` für mehrere Vermaschungen nacheinander wiederverwenden
+(`new Configuration(() => RobustPredicates.Default, () => pool.Restart())`). Die Dreiecke samt ihren
+Arrays liegen dann schon in Gen 2 und werden nicht neu angelegt (Ergebnis identisch, gleicher
+Fingerprint). Gemessen (Mittel aus 10–40 abwechselnden Läufen, .NET 10):
+
+| Layout | Szenario | neuer Pool | wiederverwendeter Pool |
+|--------|----------|-----------:|-----------------------:|
+| Arrays (wie net48) | Kachel 30°, Raster + Keil | 550 ms | 384 ms (−30 %) |
+| Arrays | kleine Kachel 20° | 45 ms | 38 ms (−16 %) |
+| Arrays, kleines Gen-0-Budget (4 MB) | Kachel 30°, Raster + Keil | 769 ms | 583 ms (−24 %) |
+| InlineArray (net8) | Kachel 30°, Raster + Keil | 434 ms | 354 ms (−18 %) |
+| InlineArray | kleine Kachel 20° | 34 ms | 37 ms (±) |
+
+Voraussetzung: Das vorige Netz wird nicht mehr benutzt, wenn der Pool neu startet (der Fallback im
+alten Repo wandelt das Netz sofort in `NetzDaten` um; Referenz- und Hauptnetz brauchen dort aber
+getrennte Pools, weil beide gleichzeitig leben). Je Thread ein Pool, `TrianglePool` ist nicht
+threadsicher.
+
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
 Alle 80 Quelldateien wurden in sechs Bereichen auf Fehler untersucht; jede Vermutung wurde mit
