@@ -755,6 +755,25 @@ Mit kleinem Gen-0-Budget (4 MB, eher wie ein Desktop-GC unter net48) und `Arrays
 delaunator-sharp bleibt bei 100.000 Punkten mit 44–52 ms etwa doppelt so schnell wie der Prototyp
 (die Punkte sind dort auch nur Koordinaten-Arrays, und es verwendet keine exakten Prädikate).
 
+### Prädikate: Messung (`PredicatesBenchmark`)
+
+Aufrufe pro Vermaschung der Herne-Kachel (30°, Snap 1 cm): 853.370 Orientierungs- und 1.033.899
+Inkreis-Tests, davon gehen 0,6 % bzw. 0,002 % in die exakten Stufen (Raster + Keil: 0,2 % bzw.
+0,4 %; reguläres Gitter: 1 % bzw. 23 %). BenchmarkDotNet, .NET 10, je Aufruf:
+
+| Daten | Orientierung | Inkreis |
+|-------|-------------:|--------:|
+| zufällige UTM-Punkte (schneller Pfad) | 4,5 ns | 7,2 ns |
+| Punkte nahe Kreis/Linie (1e-9) | 4,3 ns | 7,7 ns |
+| Gitter (kozirkulär, exakte Stufen) | 4,2 ns | 140 ns |
+
+Über das Interface oder direkt aufgerufen macht keinen messbaren Unterschied. Eine Variante mit
+`static readonly`-Schranken, ohne Statistikzähler und mit `AggressiveInlining` ist höchstens
+0,5 ns schneller. Die Prädikate kosten auf der Herne-Kachel damit rund 11 ms von 500 ms (2 %):
+keine lohnende Baustelle. Einzige Ausnahme sind die globalen Statistikzähler
+(`Statistic.CounterClockwiseCount` usw.), die bei paralleler Vermaschung auf mehreren Kernen
+dieselbe Cache-Zeile beschreiben.
+
 ### Weitere Korpora: NRW-Städte, CGAL, Natural Earth Polygone
 
 * **ALKIS Münster, Köln, Kreis Höxter** (opengeodata.nrw.de, Flurstücke, Gebäude, Nutzungen; je
