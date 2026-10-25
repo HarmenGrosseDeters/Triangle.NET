@@ -17,6 +17,9 @@
     <!-- The scenarios of the characterization tests (same workloads that are pinned by golden fingerprints). -->
     <Compile Include="..\Triangle.Tests\Characterization\MeshCases.cs" Link="Characterization\MeshCases.cs" />
     <Compile Include="..\Triangle.Tests\Corpus\CorpusCase.cs" Link="Corpus\CorpusCase.cs" />
+    <!-- Prototype of an index-based storage, see IndexStorageBenchmark. -->
+    <Compile Include="..\Triangle.Tests\Prototype\IndexTopology.cs" Link="Prototype\IndexTopology.cs" />
+    <Compile Include="..\Triangle.Tests\Prototype\XDwyer.cs" Link="Prototype\XDwyer.cs" />
     <None Include="..\Triangle.Tests\Characterization\Data\*.txt" Link="Characterization\Data\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

@@ -370,6 +370,9 @@ Der Herne-Korpus (201 Kacheln, Raster + Keil) läuft in 60/92 s statt 109/180 s 
 
 #### Speicherlayout für .NET Framework 4.8 (`TriangleLayout`)
 
+Stand vor der Index-Ablage (nächster Abschnitt). Seitdem liegen die Dreiecke in den Arrays des
+`TrianglePool`, und `TriangleLayout` wirkt nur noch auf die Teilsegmente.
+
 `[InlineArray]` gibt es erst ab .NET 8. Für `netstandard2.0` (also net48) lässt sich beim Bauen
 ein Layout wählen, bei dem Ecken, Nachbarn und Teilsegmente als einzelne Felder im Objekt
 liegen (ein Heap-Objekt pro Dreieck statt vier). Der Zugriff läuft über kleine Strukturen mit
@@ -393,19 +396,25 @@ Alle Tests laufen in allen drei Varianten grün, die Golden-Fingerprints sind gl
 | Kachel 30°, Snap 1 cm | 474 ms | 506 ms | 410 ms |
 | Kachel 30°, Raster + Keil | 400 ms | 402 ms | 338 ms |
 
-Unter net48 kann es anders aussehen (anderer JIT und GC); hier läuft kein net48. Deshalb bleibt
-`Arrays` der Standard für `netstandard2.0`. `Triangle.Benchmarks` baut für den Vergleich auf
-Windows zusätzlich `net48`:
+Unter net48 auf dem heutigen Stand (Dreiecke im Pool, `TriangleLayout` nur für Teilsegmente),
+BenchmarkDotNet, je zwei Läufe abwechselnd: `Fields` gegenüber `Arrays` je Szenario −9 % bis +8 %,
+innerhalb der Streuung zwischen zwei Läufen desselben Layouts (bis 13 %); bis zu 7 % weniger
+Allokationen. Ein Wechsel lohnt sich nicht, `Arrays` bleibt der Standard für `netstandard2.0`.
+
+`Triangle.Benchmarks` baut für den Vergleich auf Windows zusätzlich `net48`:
 
 ```
 dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Arrays -- --filter "*"
 dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Fields -- --filter "*"
 ```
 
-Mit `TRIANGLE_BENCH_SCENARIOS=herne_373600_5709000/q30-snap1cm` (kommagetrennt) lässt sich die
+BenchmarkDotNet übersetzt unter net48 gegen die schon gebaute `Triangle.dll` in
+`bin/Release/net48`, `-p:TriangleLayout` wirkt also. Kontrolle: Mit `Fields` hat `SubSegment`
+die Felder `subseg0`, `vertex0` usw. statt Arrays. Mit
+`TRIANGLE_BENCH_SCENARIOS=herne_373600_5709000/q30-snap1cm` (kommagetrennt) lässt sich die
 Auswahl einschränken. Läufe abwechselnd starten, da die CPU-Leistung schwanken kann.
 
-Einbinden im eigenen Projekt, wenn `Fields` gewinnt:
+Einbinden im eigenen Projekt, falls `Fields` in einer anderen Umgebung gewinnt:
 
 ```xml
 <ProjectReference Include="..\Triangle.NET\src\Triangle\Triangle.csproj"
@@ -413,6 +422,52 @@ Einbinden im eigenen Projekt, wenn `Fields` gewinnt:
 ```
 
 oder beim Bauen `msbuild /p:TriangleLayout=Fields` bzw. `dotnet build -p:TriangleLayout=Fields`.
+
+#### Index-Ablage der Dreiecke (`TrianglePool`)
+
+`Triangle` ist ein Handle (Pool + Index) auf die Daten des Dreiecks in den Arrays des
+`TrianglePool`: Ecken, Nachbarn (Index · 4 + Ausrichtung), Teilsegmente, IDs, Labels,
+Flächengrenzen und Markierungen. Das Außendreieck ist Position 0, `Otri` speichert Pool, Index und
+Ausrichtung direkt, und der Pool wird für 2n Dreiecke bei n Eingabepunkten angelegt (Commits
+`afd0deb`, `e13e48a`). Statt vier Heap-Objekten pro Dreieck gibt es nur noch wenige große Arrays.
+Alle Golden-Fingerprints sind unverändert.
+
+Auf .NET 10 (BenchmarkDotNet): große Herne-Kacheln gleich schnell (Snap) bis 9 % schneller
+(Raster) als mit InlineArray und 10–13 % schneller als mit dem Array-Layout; kleine Netze 10–16 %
+langsamer als mit InlineArray.
+
+Unter net48 ist der Gewinn deutlich größer. Gemessen mit BenchmarkDotNet (Standard-Job), .NET
+Framework 4.8 (4.8.10008), Windows 11, Intel Core i7-8700: alter Stand `795f1df` (Objekte mit
+Arrays, direkt vor der Umstellung) gegen den neuen Stand, gleiche Szenarien, vier Läufe abwechselnd
+(alt, neu, alt, neu), Mittel aus zwei Läufen je Stand:
+
+| Szenario | Objekte | Index-Ablage | |
+|----------|--------:|-------------:|---:|
+| `parcels-mismatch` (Steiner-Limit) | 1.392 ms | 888 ms | −36 % |
+| Kachel 30°, Snap 1 cm | 607 ms | 453 ms | −25 % |
+| Kachel 30°, Raster + Keil | 474 ms | 336 ms | −29 % |
+| Kachel 20°, Snap 1 cm | 248 ms | 193 ms | −22 % |
+| kleine Kachel 20°, Snap 1 cm | 37,6 ms | 28,9 ms | −23 % |
+| kleine Kachel 20°, Raster + Keil | 20,6 ms | 15,4 ms | −25 % |
+| Zufallspunkte 30° | 33,7 ms | 28,9 ms | −14 % |
+| UTM-Punkte, Sweepline | 4,32 ms | 3,69 ms | −15 % |
+| Rasterpunkte, Dwyer | 1,65 ms | 1,50 ms | −9 % |
+| Zufallspunkte, Dwyer | 3,02 ms | 2,86 ms | −5 % |
+| Regionen 25°, variable Fläche | 3,09 ms | 2,94 ms | −5 % |
+| kreuzende Segmente 20° | 4,78 ms | 5,03 ms | +5 % |
+| UTM-Bruchkanten 33° | 11,1 ms | 11,9 ms | +7 % |
+| Quadrat, Glätten | 1,76 ms | 1,82 ms | +3 % |
+
+Die Menge der Allokationen bleibt etwa gleich (−45 % bis +24 %, große Kacheln −5 bis −9 %), sie
+steckt aber in wenigen großen Arrays statt in Millionen kleiner Objekte, die jede
+Garbage-Collection verfolgen und kopieren muss. Der alte Stand streut zwischen zwei Läufen stark
+(`parcels-mismatch` 1.606 und 1.177 ms, Kachel 30° Snap 677 und 538 ms), der neue weniger (849 und
+928 ms, 417 und 489 ms). Die Umstellung lohnt sich also vor allem unter net48: reale Netze (Herne,
+Parzellen) 22–36 % schneller, kleine synthetische Fälle −15 % bis +7 %.
+
+Nachmessen: alten Stand als Worktree auschecken (`git worktree add --detach ../alt 795f1df`) und
+in beiden Verzeichnissen abwechselnd
+`dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -- --filter "*MeshingBenchmark*"`.
 
 ## Standard-Benchmarks für CDT (`BenchmarkDatasetsTest`, Korpus)
 
@@ -653,7 +708,7 @@ Als Standard nicht sinnvoll, als Option für große Exporte ja.
 
 Kurzlebige Objekte (Umkreismittelpunkte, Iteratoren, Hilfsarrays) sind für den .NET-GC billig. Teuer
 sind die langlebigen Netzobjekte, die bei jeder Sammlung kopiert werden: Allokationsprofil der
-Herne-Kachel mit `Arrays` (wie net48): `Osub[]` 13 %, `Otri[]` 13 %, `Triangle` 11 %, `Vertex[]` 9 %,
+Herne-Kachel mit `Arrays` (wie net48, vor der Index-Ablage): `Osub[]` 13 %, `Otri[]` 13 %, `Triangle` 11 %, `Vertex[]` 9 %,
 dazu Punkte, Vertices und Dictionary-Einträge. `ArrayPool<T>` hilft dafür nicht (die Arrays leben so
 lange wie das Netz), die Hilfsarrays der Prädikate liegen schon im Thread-Arbeitsspeicher.
 
@@ -754,6 +809,28 @@ BurstTriangulator. Ergebnis identisch (gleiche Dreiecke). Delaunay, Median, .NET
 Mit kleinem Gen-0-Budget (4 MB, eher wie ein Desktop-GC unter net48) und `Arrays`: Faktor 2,0–3,2.
 delaunator-sharp bleibt bei 100.000 Punkten mit 44–52 ms etwa doppelt so schnell wie der Prototyp
 (die Punkte sind dort auch nur Koordinaten-Arrays, und es verwendet keine exakten Prädikate).
+
+Die Bibliothek hat die Index-Ablage inzwischen übernommen (siehe „Index-Ablage der Dreiecke“).
+Gegen den heutigen Stand (`IndexStorageBenchmark`, BenchmarkDotNet, i7-8700) ist der Prototyp nur
+noch wenig schneller („Bibliothek“ ist `Dwyer` auf dem `TrianglePool`):
+
+| Punkte | net48 Bibliothek | Prototyp | Faktor | net10 Bibliothek | Prototyp | Faktor |
+|-------:|----------:|---------:|------:|----------:|---------:|------:|
+| 10.000 Gitter | 11,9 ms | 11,3 ms | 1,05 | 10,7 ms | 9,9 ms | 1,08 |
+| 10.000 zufällig | 7,8 ms | 7,7 ms | 1,01 | 7,5 ms | 6,8 ms | 1,10 |
+| 100.000 Gitter | 120 ms | 103 ms | 1,17 | 106 ms | 92 ms | 1,15 |
+| 100.000 zufällig | 97 ms | 89 ms | 1,08 | 92 ms | 90 ms | 1,02 |
+| 1 Mio. Gitter | 1.320 ms | 1.185 ms | 1,11 | 1.178 ms | 996 ms | 1,18 |
+| 1 Mio. zufällig | 1.382 ms | 1.308 ms | 1,06 | 1.309 ms | 1.321 ms | 0,99 |
+
+Der Aufbau des Netzes (Pool für 2n Dreiecke, Vertex-Dictionary) macht 6–11 % der Zeit der
+Bibliothek aus. Der Prototyp allokiert nur 27–30 % des Speichers, weil er nur Ecken und Nachbarn
+speichert (keine Teilsegmente, IDs, Labels usw.). Ein weiterer Umbau in Richtung Prototyp
+brächte also höchstens 10–15 %.
+
+```
+dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -- --filter "*IndexStorage*"
+```
 
 ### Prädikate: Messung (`PredicatesBenchmark`)
 
