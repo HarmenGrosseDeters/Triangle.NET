@@ -29,6 +29,19 @@ namespace TriangleNet.Meshing
         /// <returns>True, if the triangle meets the constraints.</returns>
         public static bool Check(Behavior behavior, Vertex torg, Vertex tdest, Vertex tapex, double areaLimit, out double cos2)
         {
+            return Check(behavior, torg, tdest, tapex, areaLimit, true, out cos2);
+        }
+
+        /// <summary>
+        /// Check the angle constraints of a counterclockwise triangle (not the area).
+        /// </summary>
+        public static bool CheckAngles(Behavior behavior, Vertex torg, Vertex tdest, Vertex tapex)
+        {
+            return Check(behavior, torg, tdest, tapex, 0.0, false, out _);
+        }
+
+        private static bool Check(Behavior behavior, Vertex torg, Vertex tdest, Vertex tapex, double areaLimit, bool checkArea, out double cos2)
+        {
             double dxod = torg.x - tdest.x;
             double dyod = torg.y - tdest.y;
             double dxda = tdest.x - tapex.x;
@@ -62,7 +75,7 @@ namespace TriangleNet.Meshing
                 return false;
             }
 
-            if (behavior.fixedArea || behavior.VarArea)
+            if (checkArea && (behavior.fixedArea || behavior.VarArea))
             {
                 double area = 0.5 * (dxod * dyda - dyod * dxda);
 

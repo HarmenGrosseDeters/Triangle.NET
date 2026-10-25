@@ -1065,6 +1065,7 @@ namespace TriangleNet.Meshing
         private readonly HashSet<Triangle> cavity = new HashSet<Triangle>();
         private readonly Stack<Otri> cavityStack = new Stack<Otri>();
         private readonly Dictionary<Vertex, Otri> cavityBoundary = new Dictionary<Vertex, Otri>();
+        private readonly List<Otri> cavityEdges = new List<Otri>();
         private readonly List<Osub> cavitySubsegs = new List<Osub>();
         private readonly List<Osub> cavityEncroached = new List<Osub>();
 
@@ -1110,6 +1111,7 @@ namespace TriangleNet.Meshing
             cavity.Clear();
             cavityStack.Clear();
             cavityBoundary.Clear();
+            cavityEdges.Clear();
             cavitySubsegs.Clear();
             cavityEncroached.Clear();
 
@@ -1149,14 +1151,7 @@ namespace TriangleNet.Meshing
                     }
 
                     // Boundary edge of the cavity (the cavity is on its left side).
-                    var org = tri.Org();
-
-                    if (cavityBoundary.ContainsKey(org))
-                    {
-                        return false;
-                    }
-
-                    cavityBoundary.Add(org, tri);
+                    cavityEdges.Add(tri);
 
                     if (sub.seg.hash != Mesh.DUMMY && CheckSeg4Encroach(ref sub, v, false) > 0)
                     {
@@ -1174,6 +1169,24 @@ namespace TriangleNet.Meshing
 
                     return true;
                 }
+            }
+
+            if (cavityEncroached.Count == 0)
+            {
+                // No subsegment on the boundary of the cavity is encroached (the most common case).
+                return false;
+            }
+
+            foreach (var edge in cavityEdges)
+            {
+                var org = edge.Org();
+
+                if (cavityBoundary.ContainsKey(org))
+                {
+                    return false;
+                }
+
+                cavityBoundary.Add(org, edge);
             }
 
             // Walk along the boundary (counterclockwise around v) and collect the subsegments.

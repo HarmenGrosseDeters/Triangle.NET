@@ -440,8 +440,10 @@ namespace TriangleNet
                 }
                 //- RELOCATION	(LOCAL SMOOTHING) -//
                 // check for possible relocation of one of triangle's points
-                // With a grid, vertices aren't relocated (see GridSize).
-                relocated = GridSize > 0.0 ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                // With a grid, vertices aren't relocated (see GridSize). Relocation improves angles,
+                // so it isn't tried for triangles that are only too large (it rarely succeeds and
+                // made area refinement 10x slower).
+                relocated = GridSize > 0.0 || !BadAngles(torg, tdest, tapex) ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {
@@ -1143,8 +1145,10 @@ namespace TriangleNet
                 }
                 // RELOCATION	(LOCAL SMOOTHING)
                 // check for possible relocation of one of triangle's points
-                // With a grid, vertices aren't relocated (see GridSize).
-                relocated = GridSize > 0.0 ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
+                // With a grid, vertices aren't relocated (see GridSize). Relocation improves angles,
+                // so it isn't tried for triangles that are only too large (it rarely succeeds and
+                // made area refinement 10x slower).
+                relocated = GridSize > 0.0 || !BadAngles(torg, tdest, tapex) ? 0 : DoSmoothing(delotri, torg, tdest, tapex, ref newloc);
                 // if relocation is possible, delete that vertex and insert a vertex at the new location
                 if (relocated > 0)
                 {
@@ -2087,6 +2091,14 @@ namespace TriangleNet
         /// <param name="tapex"></param>
         /// <param name="newloc">The new location for the point, if somothing is possible.</param>
         /// <returns>Returns 1, 2 or 3 if smoothing will work, 0 otherwise.</returns>
+        /// <summary>
+        /// Check whether the triangle violates the minimum or maximum angle constraint.
+        /// </summary>
+        private bool BadAngles(Vertex torg, Vertex tdest, Vertex tapex)
+        {
+            return !TriangleNet.Meshing.TriangleQuality.CheckAngles(behavior, torg, tdest, tapex);
+        }
+
         private int DoSmoothing(Otri badotri, Vertex torg, Vertex tdest, Vertex tapex,
             ref double[] newloc)
         {
