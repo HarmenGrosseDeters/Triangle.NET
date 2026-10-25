@@ -792,6 +792,19 @@ dieselbe Cache-Zeile beschreiben.
   (162.852 Punkte) vernetzt in 3,1 s (520.110 Dreiecke, Steiner-Limit) und ist gültig; die übrige
   Zeit braucht die Prüfung des Testgerüsts (Klassifizierung von 375.000 schlechten Dreiecken an
   winzigen Eingabewinkeln und schmalen Streifen).
+* **Weitere Natural-Earth-10m-Ebenen** (direkt von naciscdn.org: Ozean, Küstenlinie, kleine
+  Inseln, Gletscher, Riffe, Salzseen, Schelfeis, Seen Europa/Nordamerika, Stadtgebiete,
+  Map-Subunits, Provinzen mit Seen, US-Landkreise; je Ebene ganz und 60 Einzelobjekte; 0°, 20°,
+  30°): 2.220 Läufe, alle gültig bis auf die ganze Landkreis-Ebene (148.000 Punkte) bei 20° und
+  30°, die in die 120 s lief. Ursache: im Landkreis Chugach (Alaska) läuft eine Grenze 5 km hin und
+  fast deckungsgleich zurück (Abstand 5,7e-10 Grad, etwa 0,06 mm; Winkel 6,5e-7 Grad). Den
+  Streifen kann keine Verfeinerung mit 20° füllen; der Mesher hält nach 0,5 s am Steiner-Limit an,
+  die übrige Zeit braucht die Klassifizierung der 300.000 schlechten Dreiecke im Testgerüst.
+  Mit `SnapTolerance` 1e-8 (etwa 1 mm) verschwindet der Streifen; alle 3.224 Landkreise einzeln
+  und alle 68 5-Grad-Regionen sind dann ohne Limit fertig, die ganze Ebene mit
+  `TRIANGLE_CORPUS_STEINER=1000000` in 4,3 s (471.716 Dreiecke, 23.478 schlechte Dreiecke nur an
+  kleinen Eingabewinkeln und schmalen Streifen). Für Daten in Grad also eine Snap-Toleranz
+  passend zur Datengenauigkeit setzen.
 
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
