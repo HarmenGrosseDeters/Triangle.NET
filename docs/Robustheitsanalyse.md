@@ -334,6 +334,125 @@ Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Ke
 Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
 (bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
 
+### Performance-Optimierung
+
+Profil der realen Fälle: In großen Netzen gingen 25–30 % der Laufzeit in Garbage-Collection-
+Pausen. Das wachsende Netz ist komplett lebendig, und jede Sammlung kopiert alle neuen Objekte –
+die Pausen hängen an der **Anzahl** der Objekte. Jedes Dreieck bestand aus vier Heap-Objekten
+(das Dreieck und je ein Array für Ecken, Nachbarn, Teilsegmente), das waren über die Hälfte aller
+Allokationen. Änderungen (alle verhaltensneutral, Golden-Fingerprints unverändert):
+
+* Dreiecke und Teilsegmente speichern Ecken, Nachbarn und Teilsegmente unter .NET 8 als
+  `[InlineArray]` direkt im Objekt (die Bibliothek baut dafür zusätzlich für `net8.0`;
+  `netstandard2.0`, z. B. .NET Framework 4.8, behält die Arrays).
+* `InCircleAdapt` legte bei jedem Aufruf rund 40 Hilfsarrays an; sie liegen jetzt im
+  thread-lokalen Arbeitsspeicher (fast kozirkuläre Punkte, z. B. im Rastermodus, rufen ihn oft auf).
+* Rastermodus: Die aCute-Relocation wurde berechnet und dann verworfen (24 % der Zeit), am Ende
+  wurden für alle Punkte Sterne aufgebaut, obwohl fast alle schon auf dem Raster liegen.
+* aCute-Keilschnitt: Winkelfunktionen einmal pro Aufruf statt pro Kante.
+
+Gemessen mit BenchmarkDotNet (Standard-Job), alter und neuer Stand je Szenario direkt
+hintereinander (zwei getrennte Läufe im Abstand von Stunden sind auf der Cloud-Maschine nicht
+vergleichbar, die CPU-Leistung schwankte dort um 20–25 %):
+
+| Szenario | vorher | nachher | |
+|----------|-------:|--------:|---:|
+| ALKIS-Kachel 30°, Snap 1 cm | 501 ms | 398 ms | −21 % |
+| ALKIS-Kachel 30°, Raster 1 cm + Keil 3 cm | 638 ms | 327 ms | −49 % |
+| ALKIS-Kachel 20°, Snap 1 cm | 178 ms | 147 ms | −17 % |
+| kleine ALKIS-Kachel 20° | 26,1 ms | 23,5 ms | −10 % |
+| Zufallspunkte 30° | 33,2 ms | 28,3 ms | −15 % |
+| `parcels-mismatch` (Steiner-Limit) | 1.010 ms | 839 ms | −17 % |
+| kreuzende Segmente 20° | 3,73 ms | 3,55 ms | −5 % |
+| UTM-Bruchkanten 33° | 10,5 ms | 9,7 ms | −7 % |
+
+Der Herne-Korpus (201 Kacheln, Raster + Keil) läuft in 60/92 s statt 109/180 s (20°/30°).
+
+#### Speicherlayout für .NET Framework 4.8 (`TriangleLayout`)
+
+`[InlineArray]` gibt es erst ab .NET 8. Für `netstandard2.0` (also net48) lässt sich beim Bauen
+ein Layout wählen, bei dem Ecken, Nachbarn und Teilsegmente als einzelne Felder im Objekt
+liegen (ein Heap-Objekt pro Dreieck statt vier). Der Zugriff läuft über kleine Strukturen mit
+`ref`-Indexer, der übrige Code bleibt unverändert:
+
+| Eigenschaft | Layout |
+|-------------|--------|
+| (Standard) | `net8.0`: InlineArray, `netstandard2.0`: Arrays |
+| `-p:TriangleLayout=Fields` | einzelne Felder in allen Zielplattformen |
+| `-p:TriangleLayout=Arrays` | Arrays in allen Zielplattformen (altes Verhalten) |
+
+Alle Tests laufen in allen drei Varianten grün, die Golden-Fingerprints sind gleich. Auf .NET 10
+(BenchmarkDotNet, je zwei Runden abwechselnd) ist `Fields` aber langsamer als `Arrays`, der
+`ref`-Indexer mit Verzweigung kostet mehr, als die gesparten Objekte bringen:
+
+| Szenario | Arrays | Fields | InlineArray |
+|----------|-------:|-------:|------------:|
+| kleine Kachel 30° | 9,1 ms | 10,8 ms | 8,6 ms |
+| kleine Kachel 20° | 25,6 ms | 29,3 ms | 23,7 ms |
+| Zufallspunkte 30° | 32,2 ms | 35,1 ms | 29,7 ms |
+| Kachel 30°, Snap 1 cm | 474 ms | 506 ms | 410 ms |
+| Kachel 30°, Raster + Keil | 400 ms | 402 ms | 338 ms |
+
+Unter net48 kann es anders aussehen (anderer JIT und GC); hier läuft kein net48. Deshalb bleibt
+`Arrays` der Standard für `netstandard2.0`. `Triangle.Benchmarks` baut für den Vergleich auf
+Windows zusätzlich `net48`:
+
+```
+dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Arrays -- --filter "*"
+dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Fields -- --filter "*"
+```
+
+Mit `TRIANGLE_BENCH_SCENARIOS=herne_373600_5709000/q30-snap1cm` (kommagetrennt) lässt sich die
+Auswahl einschränken. Läufe abwechselnd starten, da die CPU-Leistung schwanken kann.
+
+Einbinden im eigenen Projekt, wenn `Fields` gewinnt:
+
+```xml
+<ProjectReference Include="..\Triangle.NET\src\Triangle\Triangle.csproj"
+                  AdditionalProperties="TriangleLayout=Fields" />
+```
+
+oder beim Bauen `msbuild /p:TriangleLayout=Fields` bzw. `dotnet build -p:TriangleLayout=Fields`.
+
+## Standard-Benchmarks für CDT (`BenchmarkDatasetsTest`, Korpus)
+
+Immer im Testlauf (`Robustness/BenchmarkDatasetsTest.cs`, Daten in `Robustness/Data`):
+
+* **Exakte Prädikate:** je 1.000 extreme Grenzfälle für `orient2d` und `incircle` mit bekanntem
+  Vorzeichen (Nanevski et al., Werte bis 10³³): alle richtig.
+* **Ruppert-Ahornblatt** (Kanadische Flagge) ohne Qualität und mit 20°, 30°, 33°.
+* **Gitter** (kozirkulär): 10×10 (auch Abstand 0,1 und UTM-Koordinaten), 100×100: deterministisch,
+  mit allen drei Triangulatoren und gemischter Reihenfolge Delaunay; mit diagonalen Zwangskanten
+  bei 30° keine schlechten Dreiecke.
+* **Konzentrische Kreise** mit Loch (kein Dreieck im Loch, Fläche exakt) und ohne Loch (kein
+  Dreieck kreuzt den inneren Kreis).
+* **Spitzer Stern** mit Spitzenwinkeln von 10⁻³ bis 10⁻¹⁵ rad bei drei Maßstäben (1, UTM, 10⁻⁶).
+
+Korpus (explizit, externe Daten):
+
+| Daten | Ergebnis |
+|-------|----------|
+| Testsammlung von artem-ogre/CDT (43 Dateien: hängende und überlappende Constraints, Punkte auf Kanten, Schweden, Gitarre …) | alle gültig, auch `issue-211` (siehe unten) |
+| Natural Earth Küsten 110m / 50m / 10m (10.000 / 59.000 / 407.000 Punkte) | CDT 0,1 / 1,0 / 4,8 s |
+| Natural Earth 10m mit Qualität (ausreichend Steiner-Punkte) | 20°: 11 s, 1,7 Mio. Dreiecke, 0,27 % schlecht; 30°: 22 s, 2,8 Mio., 0,39 % |
+| Natural Earth 50m, 30° | 2,6 s, 0,23 % schlecht |
+
+Gefunden und behoben:
+
+* **`issue-211`** (lange Kanten, die eine Polylinie unter praktisch 0° vielfach kreuzen): Der Noder
+  konvergierte bei keiner Toleranz, die Triangulierung brach mit einer Exception ab (die CDT-
+  Bibliothek selbst wirft hier ebenfalls). Jetzt folgt als letzte Stufe Snap-Rounding auf die größte
+  Toleranz. Dabei werden die Segmente zuerst durch die vorhandenen Punkte geführt und erst dann
+  neue Schnittpunkte berechnet; umgekehrt explodierte die Punktzahl (244 → 12.634 in vier Runden).
+  Eingaben, die bisher konvergierten, sind unverändert.
+* Der Korpus-Harness selbst war für große Daten quadratisch (Segmentabdeckung, Streifen-
+  Klassifizierung) und lief bei Natural Earth 10m in den Timeout; die Triangulierung brauchte
+  nur 3 s. Außerdem zählt die Steiner-Limit-Erkennung jetzt wie die Bibliothek (auch wieder
+  gelöschte Punkte).
+
+Thingi10k (3D-Modelle) wurde nicht verwendet: Dafür müssten erst 2D-Schnitte erzeugt werden,
+das testet eher den Schnittgenerator als die Triangulierung.
+
 ## Raster, Keile und Geländevereinfachung
 
 Testgetrieben entwickelt (Tests zuerst rot: `GridSnapRoundingTest`, `WedgeMergeTest`,
@@ -442,6 +561,237 @@ vorherigen Runden:
 | GEOS Isochronen am Steiner-Limit (20° / 30°) | 13 / 20 | 13 / 20 (unverändert, echte Feinstrukturen) |
 | Herne Nutzung, Snap 1 cm (ungerundet) | 8,70 % / 10,74 %, 1–2 Kacheln am Limit | 1,10 % / 0,98 %, kein Limit |
 | Herne Nutzung ohne Snap | lief nicht durch | läuft durch, aber 110 von 201 Kacheln am Limit, 78 % schlecht: Snap ist nötig |
+
+## Steiner-Punkte ausdünnen und glätten (`SteinerReductionTest`, `SteinerSmoothingTest`)
+
+Recherche (Oktober 2026) nach neueren, integrierbaren Verfahren. Die Grundverfahren sind älter und
+im Fork schon enthalten (Off-Center nach Üngör, aCute nach Erten/Üngör, Snap-Rounding,
+Greedy Insertion). Übernommen wurden zwei Ideen, die auf einem fertigen Qualitätsnetz arbeiten:
+
+* **Lokale Suche über Steiner-Punkte** (Abrahamsen, Brunck, Conradi, Kolbe, Nusser: „Computing
+  Non-Obtuse Triangulations with Few Steiner Points“, SoCG 2025, Gewinner der CG:SHOP Challenge
+  2025): eine constrained Delaunay-Triangulierung, in der Steiner-Punkte entfernt, verschoben
+  oder hinzugefügt werden, je nachdem, was das Netz am meisten verbessert. Ähnlich „Delaunay
+  Sifting“: Steiner-Punkte entfernen, ohne die Qualitätsmaße zu verschlechtern.
+* **Optimale Delaunay-Triangulierung (ODT)** (Chen/Xu 2004, Alliez u. a. 2005) und die
+  Verzahnung von Verfeinerung und Optimierung (Tournois, Alliez, Devillers, IMR 2007: weniger
+  Steiner-Punkte und bessere Qualität als reine Delaunay-Verfeinerung).
+
+Nicht übernommen: exakte implizite Punkte (Attene 2020, Diazzi u. a. 2023; die Ausgabe braucht
+ohnehin Raster-/Gleitkommakoordinaten), Stable Snap Rounding, randomisiertes Einfügen von
+Segmenten (GIS-Segmente sind kurz), parallele und lernende Verfahren (nicht deterministisch).
+
+Umsetzung (beide optional, Standard aus; Eingabepunkte, Segmente und Punkte auf Segmenten
+werden nie verändert, gesperrte Kanten also auch nicht):
+
+* `QualityOptions.ReduceSteinerPoints`: Ein freier Steiner-Punkt wird gelöscht, wenn alle
+  Dreiecke der Delaunay-Triangulierung seines Hohlraums die Qualitätsvorgaben erfüllen (ohne die
+  Ausnahmen der Verfeinerung, z. B. das Rasterminimum) und kein Teilsegment verletzen. Der
+  Hohlraum wird vorab genauso trianguliert wie bei `Mesh.DeleteVertex`. Geht das nicht, wird ein
+  benachbarter freier Punkt auf die Mitte der gemeinsamen Kante geschoben (Kantenkollaps), wenn
+  der Punkt danach entfernbar ist und kein anderes Dreieck schlechter wird als vorher. Die Flips
+  dieser Verschiebung werden sonst exakt rückgängig gemacht.
+* `QualityOptions.SmoothingSteps`: Durchläufe, in denen jeder freie Steiner-Punkt zur
+  ODT-Position (flächengewichtetes Mittel der Umkreismittelpunkte seiner Dreiecke) oder halb
+  dorthin rückt, im Rastermodus auf das Raster gerundet, mit Delaunay-Flips (nie über
+  Teilsegmente). Behalten wird die Verschiebung nur, wenn die geänderten Dreiecke besser werden
+  (weniger Verletzungen, sonst größerer kleinster Winkel). Kombiniert wird nach jedem Durchlauf
+  ausgedünnt.
+
+Ergebnis (Dreiecke, in Klammern Dreiecke unter dem Mindestwinkel; ALKIS-Kacheln Herne):
+
+| Szenario | ohne | ausdünnen | 3× glätten | 3× glätten + ausdünnen |
+|----------|-----:|----------:|-----------:|-----------------------:|
+| Kachel 30°, Snap 1 cm | 107.190 (1.147) | 104.312 (1.147) | 107.190 (1.147) | 103.984 (1.147), −3,0 % |
+| Kachel 30°, Raster 1 cm + Keil 3 cm | 112.353 (3.319) | 97.015 (3.207) | 112.353 (3.153) | 92.167 (3.120), −18,0 % |
+| kleine Kachel 20°, Snap 1 cm | 8.952 (184) | 8.596 (184) | 8.952 (184) | 8.514 (184), −4,9 % |
+| Zufallspunkte 30° | 13.679 (0) | 13.587 (0) | 13.679 (0) | 13.567 (0), −0,8 % |
+
+Im Rastermodus lohnt es sich am meisten: Die gerundeten Steiner-Punkte der Verfeinerung
+liegen oft dichter als nötig. Glätten hebt den mittleren kleinsten Winkel um 0,1–0,5°.
+Durch das Ausdünnen sinkt er leicht, weil weniger Punkte da sind; der Mindestwinkel bleibt
+eingehalten. Die schlechten Dreiecke an kleinen Eingabewinkeln bleiben (sie hängen an
+Eingabepunkten und Segmenten).
+
+Mit `ConformingDelaunay` (so ruft der Fallback im alten Repo auf) dieselbe Kachel mit Raster:
+136.265 Dreiecke (5.516 schlecht), ausgedünnt 119.271 (−12,5 %), geglättet und ausgedünnt
+112.713 (−17,3 %, 5.210 schlecht). Laufzeit (Minimum aus drei Läufen): 0,5 s, 1,3 s, 2,7 s,
+nur geglättet 0,7 s.
+
+Tests: alle Qualitätsszenarien des Katalogs mit allen Invarianten (Konsistenz, constrained bzw.
+conforming Delaunay, Fläche, Segmente, gesperrte Segmente, Winkelgarantie), dazu: nur freie
+Steiner-Punkte ändern sich, Segmente identisch, nicht mehr schlechte Dreiecke, kleinster Winkel
+sinkt beim Glätten nie, Maximalfläche und -winkel, Raster, `UserTest`, Determinismus.
+
+### Breite Bewertung am Korpus
+
+Alle 201 Herne-Kacheln (Raster 1 cm, Keil 3 cm), dazu Herne nur mit Snap, Natural Earth und die
+CDT-Testfälle (`TRIANGLE_CORPUS_REDUCE`, `TRIANGLE_CORPUS_SMOOTH`,
+`TRIANGLE_CORPUS_CONFORMING`). Alle Läufe gültig (keine Fehler, keine Kippungen beim Runden im
+Rastermodus). Zeiten sind die Summe der Einzelläufe:
+
+| Herne, Raster + Keil | Dreiecke 20° | Zeit 20° | Dreiecke 30° | schlecht 30° | Zeit 30° |
+|----------------------|-------------:|---------:|-------------:|-------------:|---------:|
+| ohne | 2.965.369 | 66 s | 6.586.381 | 145.925 | 102 s |
+| ausdünnen | −5,9 % | 112 s | −8,7 % | 143.794 | 196 s |
+| 3× glätten | ±0 | 96 s | ±0 | 142.260 | 159 s |
+| 3× glätten + ausdünnen | −6,7 % | 153 s | −11,6 % | 140.621 | 275 s |
+| conforming, ohne | 4.288.070 | 67 s | 8.100.427 | 211.063 | 96 s |
+| conforming, ausdünnen | −6,4 % | 124 s | −9,3 % | 207.402 | 208 s |
+| conforming, 3× glätten | ±0 | 113 s | ±0 | 204.608 | 171 s |
+| conforming, 3× glätten + ausdünnen | −7,2 % | 186 s | −12,4 % | 202.069 | 323 s |
+
+Nur Snap (ohne Raster): −2,5 % bis −4 % Dreiecke. Natural Earth und CDT-Fälle: unter 1 %
+(dort hängen die schlechten Dreiecke an winzigen Eingabewinkeln und am Steiner-Limit).
+
+Bewertung: Lohnt sich, wenn die Netzgröße zählt (Speicher, Weiterverarbeitung), vor allem im
+Rastermodus bei 30°: rund 10–12 % weniger Dreiecke und 3–4 % weniger schlechte, bei 2–3,4-facher
+Laufzeit. Glätten allein verbessert die Qualität nur wenig (−2,5 bis −3 % schlechte Dreiecke).
+Als Standard nicht sinnvoll, als Option für große Exporte ja.
+
+### Pooling
+
+Kurzlebige Objekte (Umkreismittelpunkte, Iteratoren, Hilfsarrays) sind für den .NET-GC billig. Teuer
+sind die langlebigen Netzobjekte, die bei jeder Sammlung kopiert werden: Allokationsprofil der
+Herne-Kachel mit `Arrays` (wie net48): `Osub[]` 13 %, `Otri[]` 13 %, `Triangle` 11 %, `Vertex[]` 9 %,
+dazu Punkte, Vertices und Dictionary-Einträge. `ArrayPool<T>` hilft dafür nicht (die Arrays leben so
+lange wie das Netz), die Hilfsarrays der Prädikate liegen schon im Thread-Arbeitsspeicher.
+
+Was hilft, gibt es schon: `TrianglePool` hält die Dreiecke eines Netzes und lässt sich über
+`Configuration` für mehrere Vermaschungen nacheinander wiederverwenden
+(`new Configuration(() => RobustPredicates.Default, () => pool.Restart())`). Die Dreiecke samt ihren
+Arrays liegen dann schon in Gen 2 und werden nicht neu angelegt (Ergebnis identisch, gleicher
+Fingerprint). Gemessen (Mittel aus 10–40 abwechselnden Läufen, .NET 10):
+
+| Layout | Szenario | neuer Pool | wiederverwendeter Pool |
+|--------|----------|-----------:|-----------------------:|
+| Arrays (wie net48) | Kachel 30°, Raster + Keil | 550 ms | 384 ms (−30 %) |
+| Arrays | kleine Kachel 20° | 45 ms | 38 ms (−16 %) |
+| Arrays, kleines Gen-0-Budget (4 MB) | Kachel 30°, Raster + Keil | 769 ms | 583 ms (−24 %) |
+| InlineArray (net8) | Kachel 30°, Raster + Keil | 434 ms | 354 ms (−18 %) |
+| InlineArray | kleine Kachel 20° | 34 ms | 37 ms (±) |
+
+Voraussetzung: Das vorige Netz wird nicht mehr benutzt, wenn der Pool neu startet (der Fallback im
+alten Repo wandelt das Netz sofort in `NetzDaten` um; Referenz- und Hauptnetz brauchen dort aber
+getrennte Pools, weil beide gleichzeitig leben). Je Thread ein Pool, `TrianglePool` ist nicht
+threadsicher.
+
+## Vergleich mit anderen Bibliotheken und öffentlichen Testdaten
+
+Gleiche Maschine, .NET 10, Median aus wiederholten Läufen. „Original“ ist Triangle.NET von
+wo80 (Commit `fa6f2fd`, Basis dieses Forks).
+
+**Delaunay ohne Constraints** (Szenario des BurstTriangulator-Benchmarks: n×n-Gitter im
+Einheitsquadrat, dazu gleich viele Zufallspunkte):
+
+| Punkte | Original Gitter | Fork Gitter | delaunator-sharp Gitter | Original zufällig | Fork zufällig | delaunator-sharp zufällig |
+|-------:|----------------:|------------:|------------------------:|------------------:|--------------:|--------------------------:|
+| 10.000 | 25 ms | 10 ms | 3,8 ms | 11 ms | 8,7 ms | 4,7 ms |
+| 99.856 | 1.004 ms | 132 ms | 44 ms | 188 ms | 110 ms | 52 ms |
+| 1.000.000 | 9.188 ms | 4.373 ms | 768 ms | 4.545 ms | 2.356 ms | 1.189 ms |
+
+BurstTriangulator ist in seiner eigenen Grafik 7–8× schneller als delaunator-sharp (nativer
+Code über Burst/LLVM, Unity). Für reine Delaunay-Triangulierung großer Punktmengen bleibt der Fork
+also deutlich langsamer; das liegt an den Objekten pro Dreieck (siehe Pooling) und ist nur mit
+einer index-basierten Struktur aufzuholen.
+
+**Verfeinerung:** Lake Superior (aus BurstTriangulator, 518 Punkte, 6 Löcher), Flächengrenze 100
+(wirkungslos), Mindestwinkel wie im Burst-Benchmark:
+
+| Mindestwinkel | Dreiecke | Zeit |
+|--------------:|---------:|-----:|
+| 20° | 1.003 | 2,8 ms |
+| 30° | 1.481 | 3,9 ms |
+| 33,73° (Grenze von Burst) | 1.812 | 4,5 ms |
+| 36° | 2.144 | 5,5 ms |
+| 38° | 2.751 | 7,3 ms |
+
+Laut BurstTriangulator-Dokumentation (v3.6) braucht Burst dort bis zu ~7.800 Dreiecke und 69 ms und
+endet bei 33,73°. Der Fork vernetzt mit rund einem Viertel der Dreiecke, ist etwa 15× schneller und
+kommt bis 38° (40° endet am Steiner-Limit). Das Original rechnet bis 38° gleich, stürzt bei 40° aber
+in den Prädikaten ab (`IndexOutOfRangeException`). Mit `ConformingDelaunay` ändern sich die Zahlen
+kaum.
+
+Gefunden und behoben dabei: reine Flächenverfeinerung (Einheitsquadrat, Maximalfläche 0,001) war
+mit aCute 10× langsamer als nötig, weil für jedes zu große Dreieck versucht wurde, eine Ecke zu
+verschieben (Relocation verbessert Winkel, nicht die Fläche): 148 → 14 ms bei gleicher
+Dreieckszahl; Original 125 ms. Die Vorabprüfung auf verletzte Teilsegmente bricht jetzt ab, wenn
+keines betroffen ist (klassische Verfeinerung wieder so schnell wie im Original).
+
+**Öffentliche Testdaten** (`CorpusTest.PublicFixtures`, `TRIANGLE_PUBLIC_FIXTURES`): Testfälle
+von mapbox/earcut (61 Polygone aus echten Daten und Fehlerberichten: Gewässer, sich berührende
+Löcher, selbstberührende Ringe), mapbox/delaunator (Robustheitsfälle, Ukraine) und jhasse/poly2tri
+(22 Umrisse). Jeweils ohne Qualität, 20° und 30°: 273 Läufe, alle gültig (Konsistenz, keine
+gekippten Dreiecke, alle Linien abgedeckt, Delaunay).
+
+Direkter Vergleich mit Original (Ringe als Linien und als Löcher, ohne Qualität und 30°):
+
+| | gültig | leer (erwartet) | Exception | Endlosschleife | inkonsistent |
+|---|---:|---:|---:|---:|---:|
+| Original | 305 | 8 | 31 | 2 | 2 |
+| Fork | 336 | 12 | 0 | 0 | 0 |
+
+Die leeren Ergebnisse entsprechen den Erwartungen von earcut (0 Dreiecke für entartete
+Eingaben). Lochringe ohne Fläche (earcut `water-huge`, `issue83`) warfen vorher eine Exception;
+jetzt werden ihre Kanten als Linien übernommen (earcut ignoriert solche Löcher).
+
+### Prototyp: Dreiecke als Indizes statt Objekte
+
+`src/Triangle.Tests/Prototype`: derselbe Divide-and-Conquer-Algorithmus (Kopie von `Dwyer`,
+nur `Otri` ersetzt) auf einer index-basierten Ablage: alle Ecken in einem `Vertex[]`, alle
+Nachbarn in einem `int[]` (Dreieck · 4 + Ausrichtung), so wie delaunator-sharp und
+BurstTriangulator. Ergebnis identisch (gleiche Dreiecke). Delaunay, Median, .NET 10:
+
+| Punkte | Objekte (InlineArray, net8) | Indizes | Faktor | Objekte (Arrays, wie net48) | Indizes | Faktor |
+|-------:|----------:|--------:|------:|----------:|--------:|------:|
+| 10.000 Gitter | 13,3 ms | 9,4 ms | 1,4 | 13,0 ms | 8,5 ms | 1,5 |
+| 10.000 zufällig | 10,0 ms | 9,6 ms | 1,05 | 9,0 ms | 7,4 ms | 1,2 |
+| 100.000 Gitter | 163 ms | 90 ms | 1,8 | 147 ms | 91 ms | 1,6 |
+| 100.000 zufällig | 124 ms | 90 ms | 1,4 | 150 ms | 91 ms | 1,7 |
+| 1 Mio. Gitter | 2.124 ms | 1.204 ms | 1,8 | 3.355 ms | 1.374 ms | 2,4 |
+| 1 Mio. zufällig | 2.415 ms | 1.514 ms | 1,6 | 3.205 ms | 1.420 ms | 2,3 |
+
+Mit kleinem Gen-0-Budget (4 MB, eher wie ein Desktop-GC unter net48) und `Arrays`: Faktor 2,0–3,2.
+delaunator-sharp bleibt bei 100.000 Punkten mit 44–52 ms etwa doppelt so schnell wie der Prototyp
+(die Punkte sind dort auch nur Koordinaten-Arrays, und es verwendet keine exakten Prädikate).
+
+### Prädikate: Messung (`PredicatesBenchmark`)
+
+Aufrufe pro Vermaschung der Herne-Kachel (30°, Snap 1 cm): 853.370 Orientierungs- und 1.033.899
+Inkreis-Tests, davon gehen 0,6 % bzw. 0,002 % in die exakten Stufen (Raster + Keil: 0,2 % bzw.
+0,4 %; reguläres Gitter: 1 % bzw. 23 %). BenchmarkDotNet, .NET 10, je Aufruf:
+
+| Daten | Orientierung | Inkreis |
+|-------|-------------:|--------:|
+| zufällige UTM-Punkte (schneller Pfad) | 4,5 ns | 7,2 ns |
+| Punkte nahe Kreis/Linie (1e-9) | 4,3 ns | 7,7 ns |
+| Gitter (kozirkulär, exakte Stufen) | 4,2 ns | 140 ns |
+
+Über das Interface oder direkt aufgerufen macht keinen messbaren Unterschied. Eine Variante mit
+`static readonly`-Schranken, ohne Statistikzähler und mit `AggressiveInlining` ist höchstens
+0,5 ns schneller. Die Prädikate kosten auf der Herne-Kachel damit rund 11 ms von 500 ms (2 %):
+keine lohnende Baustelle. Einzige Ausnahme sind die globalen Statistikzähler
+(`Statistic.CounterClockwiseCount` usw.), die bei paralleler Vermaschung auf mehreren Kernen
+dieselbe Cache-Zeile beschreiben.
+
+### Weitere Korpora: NRW-Städte, CGAL, Natural Earth Polygone
+
+* **ALKIS Münster, Köln, Kreis Höxter** (opengeodata.nrw.de, Flurstücke, Gebäude, Nutzungen; je
+  250 gleichmäßig verteilte 200-m-Kacheln, Raster 1 cm, Keil 3 cm, 20° und 30°): 1.504 Läufe,
+  alle gültig. Schlechte Dreiecke (bei 30°): Münster 0,56 %, Köln 0,70 %, Höxter 0,20 %
+  (Herne: 2,2 %, dort mit vielen fast deckungsgleichen Gebäude- und Nutzungsgrenzen).
+  OSM (Overpass, Geofabrik) war aus der Testumgebung nicht erreichbar.
+* **CGAL** (`CorpusTest.CgalData`, `TRIANGLE_CGAL`): 36 Sonderfälle von Polygon_repair
+  (Schleifen, Bowtie, Löcher auf dem Rand, Hin-und-zurück-Kanten, sich kreuzende Polygone) und 172
+  Polygone mit Löchern von Straight_skeleton_2, ohne Qualität, 20° und 30°: alle gültig.
+* **Natural Earth 10m Polygone** (`CorpusTest.NaturalEarthPolygons`,
+  `TRIANGLE_NATURAL_EARTH_POLYGONS`): Länder, Bundesländer/Provinzen, Seen, Landflächen, Flüsse,
+  jede Ebene als Ganzes (gemeinsame Grenzen fallen zusammen) und bis zu 150 Einzelobjekte je
+  Ebene: 2.307 Läufe, alle gültig. Zwei Ganz-Ebenen-Läufe mit Qualität (Provinzen 20°, Seen 30°,
+  Koordinaten in Grad) liefen in die 120 s des Testgerüsts. Einzeln nachgemessen: Seen bei 30°
+  (162.852 Punkte) vernetzt in 3,1 s (520.110 Dreiecke, Steiner-Limit) und ist gültig; die übrige
+  Zeit braucht die Prüfung des Testgerüsts (Klassifizierung von 375.000 schlechten Dreiecken an
+  winzigen Eingabewinkeln und schmalen Streifen).
 
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 

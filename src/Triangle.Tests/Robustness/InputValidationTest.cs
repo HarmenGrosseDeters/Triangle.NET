@@ -129,6 +129,28 @@ namespace TriangleNet.Tests.Robustness
             Assert.That(e.Message, Does.Contain("Unable to locate PSLG vertex"));
         }
 
+        [TestCase(new double[] { 2, 2, 5, 5, 8, 8 }, TestName = "DegenerateHoleCollinear")]
+        [TestCase(new double[] { 2, 2, 8, 8, 2, 2 }, TestName = "DegenerateHoleTwoDistinctPoints")]
+        [TestCase(new double[] { 2, 2, 8, 8, 5, 5, 2, 2 }, TestName = "DegenerateHoleFolded")]
+        public void DegenerateHoleRingIsMeshedAsSegments(double[] ring)
+        {
+            // A hole ring without interior (earcut fixtures water-huge, issue83) removes nothing;
+            // its edges are kept as segments (earcut ignores such holes).
+            var poly = new Polygon();
+            poly.Add(TestData.Square(0, 0, 10));
+
+            var hole = new List<Vertex>();
+            for (int i = 0; i < ring.Length; i += 2) hole.Add(new Vertex(ring[i], ring[i + 1]));
+
+            Assert.That(() => poly.Add(new Contour(hole), true), Throws.Nothing);
+
+            var mesh = poly.Triangulate(new QualityOptions { MinimumAngle = 25 });
+
+            MeshAssert.IsValid(mesh);
+            Assert.That(mesh.Triangles.Sum(t => Characterization.MeshInvariants.Area(t)), Is.EqualTo(100.0).Within(1e-9));
+            Assert.That(mesh.Vertices.Any(v => v.X == 8 && v.Y == 8), Is.True);
+        }
+
         [Test]
         public void PolygonTriangulatedTwice()
         {

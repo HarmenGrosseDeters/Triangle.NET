@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- net48 (Windows only) for measurements with .NET Framework, see Program.cs. -->
+    <TargetFrameworks>net10.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <RootNamespace>TriangleNet.Benchmarks</RootNamespace>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

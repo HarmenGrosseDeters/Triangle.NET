@@ -62,6 +62,23 @@ namespace TriangleNet.Tests.Characterization
             /// </summary>
             public double Snap { get; set; }
 
+            /// <summary>
+            /// Runs the scenario with additional quality options (null if the scenario can't
+            /// be configured).
+            /// </summary>
+            public Func<IPolygon, Action<QualityOptions>, Mesh> RunWith { get; set; }
+
+            /// <summary>
+            /// A copy of the scenario with additional quality options.
+            /// </summary>
+            public Case With(string suffix, Action<QualityOptions> configure)
+            {
+                var copy = (Case)MemberwiseClone();
+                copy.Name = Name + "+" + suffix;
+                copy.Run = p => RunWith(p, configure);
+                return copy;
+            }
+
             public override string ToString() => Name;
         }
 
@@ -174,7 +191,7 @@ namespace TriangleNet.Tests.Characterization
             double maxArea = 0, bool variableArea = false, bool angleGuarantee = false, bool conforming = false,
             bool legacy = false, Func<ISegment, bool> locked = null)
         {
-            return new Case
+            var c = new Case
             {
                 Name = name,
                 Input = input,
@@ -183,8 +200,10 @@ namespace TriangleNet.Tests.Characterization
                 AngleGuarantee = angleGuarantee && minAngle > 0,
                 Conforming = conforming,
                 Locked = locked,
-                Snap = options.SnapTolerance,
-                Run = p =>
+                Snap = options.SnapTolerance
+            };
+
+            c.RunWith = (p, configure) =>
                 {
                     // Conforming Delaunay without quality constraints has no Steiner point
                     // limit otherwise.
@@ -199,9 +218,13 @@ namespace TriangleNet.Tests.Characterization
                         }
                         : null;
 
+                    if (quality != null) configure?.Invoke(quality);
+
                     return (Mesh)p.Triangulate(options, quality);
-                }
-            };
+                };
+            c.Run = p => c.RunWith(p, null);
+
+            return c;
         }
 
         #region Inputs

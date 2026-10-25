@@ -102,9 +102,116 @@ namespace TriangleNet.Tests.Corpus
                 {
                     foreach (var polygon in coordinates.EnumerateArray()) AddPolygon(rings, polygon);
                 }
+                else if (type == "LineString")
+                {
+                    // Polylines (e.g. coastlines) are returned like rings.
+                    rings.Add(coordinates.EnumerateArray().Select(p => (p[0].GetDouble(), p[1].GetDouble())).ToList());
+                }
+                else if (type == "MultiLineString")
+                {
+                    AddPolygon(rings, coordinates);
+                }
             }
 
             return rings;
+        }
+
+        /// <summary>
+        /// Test data of CGAL (sparse checkout of https://github.com/CGAL/cgal): polygons with holes
+        /// and invalid polygons of Polygon_repair (WKT) and of Straight_skeleton_2 (.poly: number
+        /// of rings, then per ring the number of points and the coordinates).
+        /// </summary>
+        public static IEnumerable<CorpusCase> ReadCgal(string root)
+        {
+            var repair = Path.Combine(root, "Polygon_repair", "test", "Polygon_repair", "data", "in");
+            if (Directory.Exists(repair))
+            {
+                foreach (var path in Directory.GetFiles(repair, "*.wkt").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var c = new CorpusCase { Name = "cgal/repair/" + Path.GetFileNameWithoutExtension(path) };
+                    AddWkt(c, File.ReadAllText(path));
+                    yield return c;
+                }
+            }
+
+            var skeleton = Path.Combine(root, "Straight_skeleton_2", "test", "Straight_skeleton_2", "data");
+            if (Directory.Exists(skeleton))
+            {
+                foreach (var path in Directory.GetFiles(skeleton, "*.poly").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var tokens = File.ReadAllText(path).Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    var c = new CorpusCase { Name = "cgal/skeleton/" + Path.GetFileNameWithoutExtension(path) };
+                    int k = 0;
+
+                    if (tokens.Length == 0 || !int.TryParse(tokens[k++], out int rings)) continue;
+
+                    for (int r = 0; r < rings && k < tokens.Length; r++)
+                    {
+                        if (!int.TryParse(tokens[k++], out int n) || k + 2 * n > tokens.Length) break;
+
+                        var ring = new List<(double X, double Y)>(n + 1);
+                        for (int i = 0; i < n; i++, k += 2)
+                        {
+                            ring.Add((double.Parse(tokens[k], CultureInfo.InvariantCulture), double.Parse(tokens[k + 1], CultureInfo.InvariantCulture)));
+                        }
+
+                        if (ring.Count > 1)
+                        {
+                            ring.Add(ring[0]);
+                            c.Lines.Add(ring);
+                        }
+                    }
+
+                    if (c.Lines.Count > 0) yield return c;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Read the rings (and lines) of each feature of a GeoJSON file separately, named by the
+        /// property NAME, name or the feature index.
+        /// </summary>
+        public static List<(string Name, List<List<(double X, double Y)>> Rings)> ReadGeoJsonFeatures(string path)
+        {
+            var features = new List<(string, List<List<(double X, double Y)>>)>();
+
+            using var stream = File.OpenRead(path);
+            using var doc = JsonDocument.Parse(stream);
+
+            int index = 0;
+
+            foreach (var feature in doc.RootElement.GetProperty("features").EnumerateArray())
+            {
+                index++;
+
+                if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind != JsonValueKind.Object) continue;
+
+                string name = index.ToString(CultureInfo.InvariantCulture);
+
+                if (feature.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var key in new[] { "NAME", "name" })
+                    {
+                        if (properties.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String)
+                        {
+                            name = value.GetString() + " #" + index;
+                            break;
+                        }
+                    }
+                }
+
+                var rings = new List<List<(double X, double Y)>>();
+                var type = geometry.GetProperty("type").GetString();
+                var coordinates = geometry.GetProperty("coordinates");
+
+                if (type == "Polygon" || type == "MultiLineString") AddPolygon(rings, coordinates);
+                else if (type == "MultiPolygon") foreach (var polygon in coordinates.EnumerateArray()) AddPolygon(rings, polygon);
+                else if (type == "LineString") rings.Add(coordinates.EnumerateArray().Select(p => (p[0].GetDouble(), p[1].GetDouble())).ToList());
+
+                if (rings.Count > 0) features.Add((name, rings));
+            }
+
+            return features;
         }
 
         private static void AddPolygon(List<List<(double X, double Y)>> rings, JsonElement polygon)
@@ -112,6 +219,108 @@ namespace TriangleNet.Tests.Corpus
             foreach (var ring in polygon.EnumerateArray())
             {
                 rings.Add(ring.EnumerateArray().Select(p => (p[0].GetDouble(), p[1].GetDouble())).ToList());
+            }
+        }
+
+        /// <summary>
+        /// Read the test inputs of the CDT library (https://github.com/artem-ogre/CDT,
+        /// CDT/tests/inputs): number of vertices and edges, the vertex coordinates, the edges
+        /// as pairs of vertex indices.
+        /// </summary>
+        /// <summary>
+        /// Test fixtures of other triangulation libraries below the given directory (each in its
+        /// own folder, as cloned from GitHub): mapbox/earcut test/fixtures (rings as closed lines),
+        /// mapbox/delaunator test/fixtures (point sets), jhasse/poly2tri testbed/data (outlines).
+        /// </summary>
+        public static IEnumerable<CorpusCase> ReadPublicFixtures(string root)
+        {
+            (double, double) P(System.Text.Json.JsonElement e) => (e[0].GetDouble(), e[1].GetDouble());
+
+            var earcut = Path.Combine(root, "earcut", "test", "fixtures");
+            if (Directory.Exists(earcut))
+            {
+                foreach (var path in Directory.GetFiles(earcut, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var c = new CorpusCase { Name = "earcut/" + Path.GetFileNameWithoutExtension(path) };
+
+                    foreach (var ring in System.Text.Json.JsonDocument.Parse(File.ReadAllText(path)).RootElement.EnumerateArray())
+                    {
+                        var line = ring.EnumerateArray().Select(P).ToList();
+                        if (line.Count > 1 && line[0] != line[line.Count - 1]) line.Add(line[0]);
+                        if (line.Count > 1) c.Lines.Add(line);
+                    }
+
+                    yield return c;
+                }
+            }
+
+            var delaunator = Path.Combine(root, "delaunator", "test", "fixtures");
+            if (Directory.Exists(delaunator))
+            {
+                foreach (var path in Directory.GetFiles(delaunator, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var c = new CorpusCase { Name = "delaunator/" + Path.GetFileNameWithoutExtension(path) };
+                    c.Points.AddRange(System.Text.Json.JsonDocument.Parse(File.ReadAllText(path)).RootElement.EnumerateArray().Select(P));
+                    yield return c;
+                }
+            }
+
+            var poly2tri = Path.Combine(root, "poly2tri", "testbed", "data");
+            if (Directory.Exists(poly2tri))
+            {
+                foreach (var path in Directory.GetFiles(poly2tri, "*.dat").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    var line = File.ReadAllLines(path)
+                        .Select(l => l.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                        .Where(t => t.Length >= 2)
+                        .Select(t => (double.Parse(t[0], CultureInfo.InvariantCulture), double.Parse(t[1], CultureInfo.InvariantCulture)))
+                        .ToList();
+
+                    if (line.Count < 2) continue;
+                    line.Add(line[0]);
+
+                    var c = new CorpusCase { Name = "poly2tri/" + Path.GetFileNameWithoutExtension(path) };
+                    c.Lines.Add(line);
+                    yield return c;
+                }
+            }
+        }
+
+        public static IEnumerable<CorpusCase> ReadCdtInputs(string directory)
+        {
+            foreach (var path in Directory.GetFiles(directory, "*.txt").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var tokens = File.ReadAllText(path).Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (tokens.Length < 2 || !int.TryParse(tokens[0], out int nv) || !int.TryParse(tokens[1], out int ne) ||
+                    tokens.Length < 2 + 2 * nv + 2 * ne)
+                {
+                    continue;
+                }
+
+                var c = new CorpusCase { Name = "cdt/" + Path.GetFileName(path) };
+                var points = new List<(double X, double Y)>(nv);
+
+                for (int i = 0; i < nv; i++)
+                {
+                    points.Add((double.Parse(tokens[2 + 2 * i], CultureInfo.InvariantCulture),
+                        double.Parse(tokens[3 + 2 * i], CultureInfo.InvariantCulture)));
+                }
+
+                c.Points.AddRange(points);
+
+                for (int e = 0; e < ne; e++)
+                {
+                    int a = int.Parse(tokens[2 + 2 * nv + 2 * e], CultureInfo.InvariantCulture);
+                    int b = int.Parse(tokens[3 + 2 * nv + 2 * e], CultureInfo.InvariantCulture);
+
+                    if (a >= 0 && a < nv && b >= 0 && b < nv)
+                    {
+                        c.Lines.Add(new List<(double X, double Y)> { points[a], points[b] });
+                    }
+                }
+
+                yield return c;
             }
         }
 

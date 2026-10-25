@@ -44,7 +44,7 @@ points-utm/dwyer V=2000 T=3979 S=0 H=23343a853965d5a8
 points-utm/incremental V=2000 T=3979 S=0 H=23343a853965d5a8
 points-utm/q30 V=4905 T=9407 S=401 H=48512e2b2abbbeb8
 points-utm/sweepline V=2000 T=3979 S=0 H=23343a853965d5a8
-regions/q25-variable-area V=463 T=861 S=92 H=94d37520ac45974f
+regions/q25-variable-area V=464 T=871 S=84 H=3684dba3fbcb8be7
 square-hole/cdt V=8 T=8 S=8 H=d3cbe572ce5dd341
 square-hole/conforming V=12 T=12 S=12 H=588f772472ed13c9
 square-hole/q20 V=12 T=12 S=12 H=588f772472ed13c9

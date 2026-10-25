@@ -39,6 +39,10 @@ namespace TriangleNet.Meshing
 
         bool enableAcute = true;
 
+        bool reduceSteinerPoints;
+
+        int smoothingSteps;
+
         public QualityMesher(Mesh mesh, Configuration config)
         {
             badsubsegs = new Queue<BadSubseg>();
@@ -79,6 +83,9 @@ namespace TriangleNet.Meshing
                 mesh.steinerleft = quality.SteinerPoints == 0 ? -1 : quality.SteinerPoints;
 
                 enableAcute = !quality.UseLegacyRefinement;
+
+                reduceSteinerPoints = quality.ReduceSteinerPoints;
+                smoothingSteps = quality.SmoothingSteps;
             }
 
             // Ensure that no vertex can be mistaken for a triangular bounding
@@ -1055,9 +1062,9 @@ namespace TriangleNet.Meshing
         }
 
         // Work data of EncroachesBeforeInsertion.
-        private readonly HashSet<Triangle> cavity = new HashSet<Triangle>();
         private readonly Stack<Otri> cavityStack = new Stack<Otri>();
         private readonly Dictionary<Vertex, Otri> cavityBoundary = new Dictionary<Vertex, Otri>();
+        private readonly List<Otri> cavityEdges = new List<Otri>();
         private readonly List<Osub> cavitySubsegs = new List<Osub>();
         private readonly List<Osub> cavityEncroached = new List<Osub>();
 
@@ -1100,16 +1107,19 @@ namespace TriangleNet.Meshing
                 return false;
             }
 
-            cavity.Clear();
+            int stamp = mesh.NextMark();
+            int cavityCount = 1;
+
             cavityStack.Clear();
             cavityBoundary.Clear();
+            cavityEdges.Clear();
             cavitySubsegs.Clear();
             cavityEncroached.Clear();
 
             Otri tri = default(Otri), neighbor = default(Otri);
             Osub sub = default(Osub);
 
-            cavity.Add(horiz.tri);
+            horiz.tri.mark = stamp;
             cavityStack.Push(horiz);
 
             while (cavityStack.Count > 0)
@@ -1126,7 +1136,7 @@ namespace TriangleNet.Meshing
 
                         if (neighbor.tri.id != Mesh.DUMMY)
                         {
-                            if (cavity.Contains(neighbor.tri))
+                            if (neighbor.tri.mark == stamp)
                             {
                                 continue;
                             }
@@ -1134,7 +1144,8 @@ namespace TriangleNet.Meshing
                             // Same test (and argument order) as in Mesh.InsertVertex.
                             if (predicates.InCircle(tri.Dest(), v, tri.Org(), neighbor.Apex()) > 0.0)
                             {
-                                cavity.Add(neighbor.tri);
+                                neighbor.tri.mark = stamp;
+                                cavityCount++;
                                 cavityStack.Push(neighbor);
                                 continue;
                             }
@@ -1142,14 +1153,7 @@ namespace TriangleNet.Meshing
                     }
 
                     // Boundary edge of the cavity (the cavity is on its left side).
-                    var org = tri.Org();
-
-                    if (cavityBoundary.ContainsKey(org))
-                    {
-                        return false;
-                    }
-
-                    cavityBoundary.Add(org, tri);
+                    cavityEdges.Add(tri);
 
                     if (sub.seg.hash != Mesh.DUMMY && CheckSeg4Encroach(ref sub, v, false) > 0)
                     {
@@ -1157,7 +1161,7 @@ namespace TriangleNet.Meshing
                     }
                 }
 
-                if (cavity.Count > LargeCavity && cavityEncroached.Count > 0)
+                if (cavityCount > LargeCavity && cavityEncroached.Count > 0)
                 {
                     for (int i = 0; i < cavityEncroached.Count; i++)
                     {
@@ -1167,6 +1171,24 @@ namespace TriangleNet.Meshing
 
                     return true;
                 }
+            }
+
+            if (cavityEncroached.Count == 0)
+            {
+                // No subsegment on the boundary of the cavity is encroached (the most common case).
+                return false;
+            }
+
+            foreach (var edge in cavityEdges)
+            {
+                var org = edge.Org();
+
+                if (cavityBoundary.ContainsKey(org))
+                {
+                    return false;
+                }
+
+                cavityBoundary.Add(org, edge);
             }
 
             // Walk along the boundary (counterclockwise around v) and collect the subsegments.
@@ -1190,7 +1212,7 @@ namespace TriangleNet.Meshing
                     sub.Sym(ref sym);
                     sym.Pivot(ref neighbor);
 
-                    if (neighbor.tri.id != Mesh.DUMMY && cavity.Contains(neighbor.tri))
+                    if (neighbor.tri.id != Mesh.DUMMY && neighbor.tri.mark == stamp)
                     {
                         return false;
                     }
@@ -1394,6 +1416,22 @@ namespace TriangleNet.Meshing
         /// <summary>
         /// Remove all the encroached subsegments and bad triangles from the triangulation.
         /// </summary>
+        /// <summary>
+        /// Smooth and remove Steiner points (see <see cref="QualityOptions.SmoothingSteps"/>
+        /// and <see cref="QualityOptions.ReduceSteinerPoints"/>).
+        /// </summary>
+        private void OptimizeSteinerPoints(CancellationToken cancellationToken)
+        {
+            var smoother = smoothingSteps > 0 ? new SteinerSmoother(mesh, predicates, gridSize) : null;
+            var reducer = reduceSteinerPoints ? new SteinerReducer(mesh, predicates, gridSize) : null;
+
+            for (int i = 0; i < Math.Max(1, smoothingSteps); i++)
+            {
+                smoother?.Apply(cancellationToken);
+                reducer?.Apply(cancellationToken);
+            }
+        }
+
         private void EnforceQuality(CancellationToken cancellationToken)
         {
             BadTriangle badtri;
@@ -1442,6 +1480,11 @@ namespace TriangleNet.Meshing
             // At this point, if the "-D" switch was selected and we haven't run out
             // of Steiner points, the triangulation should be (conforming) Delaunay
             // and have no low-quality triangles.
+
+            if (reduceSteinerPoints || smoothingSteps > 0)
+            {
+                OptimizeSteinerPoints(cancellationToken);
+            }
 
             CheckOrientation();
 

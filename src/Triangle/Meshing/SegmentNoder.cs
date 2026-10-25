@@ -128,6 +128,16 @@ namespace TriangleNet.Meshing
                 }
             }
 
+            // Last resort: snap rounding to the largest tolerance (always converges in theory,
+            // e.g. for many segments crossing at tiny angles, where the rounded intersection
+            // points keep creating new intersections).
+            var rounded = SnapRound(polygon, predicates, tolerance, 100, fallback: false);
+
+            if (rounded != null)
+            {
+                return rounded;
+            }
+
             throw new InvalidOperationException("Segment noding doesn't converge (too many nearly coincident segments). " +
                 "Consider cleaning the input (e.g. snapping it to a grid).");
         }
@@ -152,7 +162,14 @@ namespace TriangleNet.Meshing
         /// If snap rounding doesn't converge, the result of <see cref="Node(IPolygon, IPredicates, int, double)"/>
         /// with the grid size as minimum tolerance is returned (not all vertices are on the grid then).
         /// </remarks>
-        public static IPolygon SnapRound(IPolygon polygon, IPredicates predicates, double gridSize, int maxIterations = 20)
+        public static IPolygon SnapRound(IPolygon polygon, IPredicates predicates, double gridSize, int maxIterations = 100)
+        {
+            return SnapRound(polygon, predicates, gridSize, maxIterations, fallback: true);
+        }
+
+        /// <param name="fallback">If true, the result of <see cref="Node(IPolygon, IPredicates, int, double)"/>
+        /// is returned if snap rounding doesn't converge, otherwise null.</param>
+        private static IPolygon SnapRound(IPolygon polygon, IPredicates predicates, double gridSize, int maxIterations, bool fallback)
         {
             if (!(gridSize > 0.0) || double.IsInfinity(gridSize))
             {
@@ -263,7 +280,13 @@ namespace TriangleNet.Meshing
             {
                 var splits = new Dictionary<int, List<(double, Vertex)>>();
 
-                foreach (var (i, j) in FindCrossings(segments, predicates))
+                // First route the segments through the hot pixels of the existing vertices: this
+                // merges nearly coincident segments without creating new vertices. (Computing
+                // new intersections first made the number of vertices explode for segments
+                // crossing at tiny angles, whose rounded intersections create new crossings.)
+                AddHotPixels(segments, vertices, half, retired, splits);
+
+                foreach (var (i, j) in splits.Count > 0 ? new List<(int, int)>() : FindCrossings(segments, predicates))
                 {
                     var a = segments[i].GetVertex(0);
                     var b = segments[i].GetVertex(1);
@@ -305,11 +328,6 @@ namespace TriangleNet.Meshing
 
                 if (splits.Count == 0)
                 {
-                    AddHotPixels(segments, vertices, half, retired, splits);
-                }
-
-                if (splits.Count == 0)
-                {
                     converged = true;
                     break;
                 }
@@ -325,7 +343,7 @@ namespace TriangleNet.Meshing
 
             if (!converged)
             {
-                return Node(polygon, predicates, minTolerance: gridSize);
+                return fallback ? Node(polygon, predicates, minTolerance: gridSize) : null;
             }
 
             if (!changed)

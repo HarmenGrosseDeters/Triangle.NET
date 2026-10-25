@@ -12,6 +12,17 @@
     <LangVersion>default</LangVersion>
   </PropertyGroup>
 
+  <!-- Memory layout of triangles and subsegments (for measurements, default: InlineArray on
+       .NET 8 and later, arrays on netstandard2.0):
+       -p:TriangleLayout=Fields   fields with ref-returning indexers (all targets)
+       -p:TriangleLayout=Arrays   arrays (all targets) -->
+  <PropertyGroup Condition="'$(TriangleLayout)' == 'Fields'">
+    <DefineConstants>$(DefineConstants);FIELD_LAYOUT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TriangleLayout)' == 'Arrays'">
+    <DefineConstants>$(DefineConstants);ARRAY_LAYOUT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Triangle.Tests" />
   </ItemGroup>
