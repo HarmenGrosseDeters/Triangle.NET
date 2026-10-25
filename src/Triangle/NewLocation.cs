@@ -2168,6 +2168,14 @@ namespace TriangleNet
 
             // get the surrounding points of q, so this gives us the triangles
             // Only free vertices can be relocated (checked first, the star is expensive).
+            if (flag1 > 0)
+            {
+                // The origin is preferred (see below), the other vertices needn't be tried.
+                newloc[0] = possibilities[0];
+                newloc[1] = possibilities[1];
+                return flag1;
+            }
+
             numpoints_q = tdest.type == VertexType.FreeVertex && !relocatedVertices.Contains(tdest)
                 ? GetStarPoints(badotri, torg, tdest, tapex, 2, ref points_q) : 0;
             // 	// check if the points in counterclockwise order
@@ -2216,6 +2224,13 @@ namespace TriangleNet
             //********************* TRY TO RELOCATE POINT "q" ***************
             // get the surrounding points of r, so this gives us the triangles
             // Only free vertices can be relocated (checked first, the star is expensive).
+            if (flag2 > 0)
+            {
+                newloc[0] = possibilities[2];
+                newloc[1] = possibilities[3];
+                return flag2;
+            }
+
             numpoints_r = tapex.type == VertexType.FreeVertex && !relocatedVertices.Contains(tapex)
                 ? GetStarPoints(badotri, torg, tdest, tapex, 3, ref points_r) : 0;
             // check if the points in counterclockwise order
@@ -3413,6 +3428,21 @@ namespace TriangleNet
         /// </remarks>
         private int HalfPlaneIntersection(int numvertices, ref double[] convexPoly, double x1, double y1, double x2, double y2)
         {
+            // Fast path (most calls): all vertices clearly on one side of the line. The general
+            // code below then finds no intersection and returns the polygon starting at its
+            // second vertex (left side), or nothing (right side); the same is done here.
+            switch (Side(numvertices, convexPoly, x1, y1, x2, y2))
+            {
+                case 1:
+                    double fx = convexPoly[0], fy = convexPoly[1];
+                    Array.Copy(convexPoly, 2, convexPoly, 0, 2 * numvertices - 2);
+                    convexPoly[2 * numvertices - 2] = fx;
+                    convexPoly[2 * numvertices - 1] = fy;
+                    return numvertices;
+                case -1:
+                    return 0;
+            }
+
             double dx, dy;	// direction of the line
             double z, min, max;
             int i, j;
@@ -3467,6 +3497,45 @@ namespace TriangleNet
             }
             // update convexPoly
             return count;
+        }
+
+        /// <summary>
+        /// Returns 1 (-1), if all vertices of the polygon lie on the left (right) side of the line
+        /// with a margin that makes the general intersection code find no intersection, else 0.
+        /// </summary>
+        private static int Side(int numvertices, double[] convexPoly, double x1, double y1, double x2, double y2)
+        {
+            double dx = x2 - x1, dy = y2 - y1;
+            double min = double.MaxValue, max = double.MinValue, scale = 0.0;
+
+            for (int k = 0; k < numvertices; k++)
+            {
+                double px = convexPoly[2 * k] - x1, py = convexPoly[2 * k + 1] - y1;
+                double z = dx * py - dy * px;
+
+                if (z < min) min = z;
+                if (z > max) max = z;
+
+                double r = Math.Abs(px) + Math.Abs(py);
+                if (r > scale) scale = r;
+            }
+
+            // The intersection code works with absolute tolerances (1e-13 relative to the edge
+            // parameter): the distances must be clearly positive (rounding) and not too different
+            // (the line could otherwise pass the polygon within that tolerance).
+            double margin = 1e-9 * (Math.Abs(dx) + Math.Abs(dy)) * scale;
+
+            if (min > margin && min > 1e-10 * max)
+            {
+                return 1;
+            }
+
+            if (max < -margin && -max > 1e-10 * -min)
+            {
+                return -1;
+            }
+
+            return 0;
         }
 
         /// <summary>
