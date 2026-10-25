@@ -8,27 +8,41 @@ namespace TriangleNet
 {
     using System;
     using System.Collections.Generic;
+    using TriangleNet.Geometry;
     using TriangleNet.Topology;
 
     /// <summary>
     /// Pool datastructure storing triangles of a <see cref="Mesh" />.
     /// </summary>
+    /// <remarks>
+    /// The data of all triangles is stored in arrays (three vertices, neighbors and subsegments
+    /// per triangle, and the attributes), a <see cref="Triangle"/> is an index into them. Position
+    /// 0 is the "outer space" triangle of the mesh. A pool can be reused for several meshes, one
+    /// after another (see <see cref="Restart"/>), which also reuses the arrays.
+    /// </remarks>
     public class TrianglePool : ICollection<Triangle>
     {
-        // Determines the size of each block in the pool.
-        private const int BLOCKSIZE = 1024;
-
-        // The total number of currently allocated triangles.
+        // The total number of currently allocated triangles (positions 1 to size).
         int size;
 
         // The number of triangles currently used.
         int count;
 
-        // The pool.
-        Triangle[][] pool;
+        // Per triangle (index), three entries per triangle (3 * index + orientation).
+        internal Vertex[] vertices;
+        internal int[] neighbors; // (index << 2) | orientation of the neighbor, -1: dead
+        internal Osub[] subsegs;
+        internal int[] ids;
+        internal int[] labels;
+        internal double[] areas;
+        internal bool[] infected;
+        internal int[] marks;
+
+        // Whether the triangle at the position is used.
+        bool[] alive;
 
         // A stack of free triangles.
-        Stack<Triangle> stack;
+        Stack<int> stack;
 
         /// <summary>
         /// Gets the total number of currently allocated triangles.
@@ -38,18 +52,56 @@ namespace TriangleNet
         /// <summary>
         /// Initializes a new instance of the <see cref="TrianglePool" /> class.
         /// </summary>
-        public TrianglePool()
+        public TrianglePool() : this(1024)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TrianglePool" /> class with the given
+        /// initial capacity (the arrays grow as needed).
+        /// </summary>
+        internal TrianglePool(int capacity)
         {
             size = 0;
 
-            // On startup, the pool should be able to hold 2^16 triangles.
-            int n = Math.Max(1, 65536 / BLOCKSIZE);
+            Allocate(Math.Max(1, capacity));
 
-            pool = new Triangle[n][];
-            pool[0] = new Triangle[BLOCKSIZE];
+            stack = new Stack<int>(1024);
 
-            stack = new Stack<Triangle>(BLOCKSIZE);
+            InitializeDummy();
         }
+
+        private void Allocate(int capacity)
+        {
+            capacity += 1; // The outer space triangle.
+
+            Array.Resize(ref vertices, 3 * capacity);
+            Array.Resize(ref neighbors, 3 * capacity);
+            Array.Resize(ref subsegs, 3 * capacity);
+            Array.Resize(ref ids, capacity);
+            Array.Resize(ref labels, capacity);
+            Array.Resize(ref areas, capacity);
+            Array.Resize(ref infected, capacity);
+            Array.Resize(ref marks, capacity);
+            Array.Resize(ref alive, capacity);
+        }
+
+        private void InitializeDummy()
+        {
+            // The outer space triangle: all neighbors are the outer space triangle itself.
+            ids[0] = Mesh.DUMMY;
+            neighbors[0] = neighbors[1] = neighbors[2] = 0;
+            vertices[0] = vertices[1] = vertices[2] = null;
+            labels[0] = 0;
+            areas[0] = 0.0;
+            infected[0] = false;
+            marks[0] = 0;
+        }
+
+        /// <summary>
+        /// Gets the outer space triangle ('dummytri') of the mesh using this pool.
+        /// </summary>
+        internal Triangle Dummy => new Triangle(this, 0);
 
         // After the triangles have been renumbered (ids 0 to n-1), new triangles get the
         // following ids (their hash could collide with the new ids). -1: ids are hashes.
@@ -63,9 +115,9 @@ namespace TriangleNet
             nextId = id;
         }
 
-        private int NextId(Triangle triangle)
+        private int NextId(int index)
         {
-            return nextId < 0 ? triangle.hash : nextId++;
+            return nextId < 0 ? index - 1 : nextId++;
         }
 
         /// <summary>
@@ -74,52 +126,43 @@ namespace TriangleNet
         /// <returns></returns>
         public Triangle Get()
         {
-            Triangle triangle;
+            int index;
 
             if (stack.Count > 0)
             {
-                triangle = stack.Pop();
-                triangle.hash = -triangle.hash - 1;
+                index = stack.Pop();
+                alive[index] = true;
 
-                triangle.id = NextId(triangle);
+                ids[index] = NextId(index);
 
-                Cleanup(triangle);
+                Cleanup(index);
             }
             else if (count < size)
             {
-                triangle = pool[count / BLOCKSIZE][count % BLOCKSIZE];
-                triangle.id = NextId(triangle);
+                index = count + 1;
+                ids[index] = NextId(index);
 
-                Cleanup(triangle);
+                Cleanup(index);
 
                 count++;
             }
             else
             {
-                triangle = new Triangle();
-                triangle.hash = size;
-                triangle.id = NextId(triangle);
-
-                int block = size / BLOCKSIZE;
-
-                if (pool[block] == null)
+                if (size + 2 > ids.Length)
                 {
-                    pool[block] = new Triangle[BLOCKSIZE];
-
-                    // Check if the pool has to be resized.
-                    if (block + 1 == pool.Length)
-                    {
-                        Array.Resize(ref pool, 2 * pool.Length);
-                    }
+                    Allocate(2 * (ids.Length - 1));
                 }
 
-                // Add triangle to pool.
-                pool[block][size % BLOCKSIZE] = triangle;
+                index = size + 1;
+                alive[index] = true;
+                ids[index] = NextId(index);
+
+                Cleanup(index);
 
                 count = ++size;
             }
 
-            return triangle;
+            return new Triangle(this, index);
         }
 
         /// <summary>
@@ -127,10 +170,10 @@ namespace TriangleNet
         /// </summary>
         public void Release(Triangle triangle)
         {
-            stack.Push(triangle);
+            stack.Push(triangle.index);
 
             // Mark the triangle as free (used by enumerator).
-            triangle.hash = -triangle.hash - 1;
+            alive[triangle.index] = false;
         }
 
         /// <summary>
@@ -138,15 +181,16 @@ namespace TriangleNet
         /// </summary>
         public TrianglePool Restart()
         {
-            foreach (var triangle in stack)
+            foreach (var index in stack)
             {
-                // Reset hash to original value.
-                triangle.hash = -triangle.hash - 1;
+                alive[index] = true;
             }
 
             stack.Clear();
 
             count = 0;
+
+            InitializeDummy();
 
             return this;
         }
@@ -167,8 +211,6 @@ namespace TriangleNet
                 k = alive;
             }
 
-            Triangle t;
-
             // TODO: improve sampling code (to ensure no duplicates).
 
             // Live triangles are spread over all used slots [0, count), not only the first
@@ -179,30 +221,26 @@ namespace TriangleNet
             {
                 i = random.Next(0, count);
 
-                t = pool[i / BLOCKSIZE][i % BLOCKSIZE];
-
-                if (t.hash >= 0)
+                if (this.alive[i + 1])
                 {
                     k--;
-                    yield return t;
+                    yield return new Triangle(this, i + 1);
                 }
             }
         }
 
-        private void Cleanup(Triangle triangle)
+        private void Cleanup(int index)
         {
-            triangle.label = 0;
-            triangle.area = 0.0;
-            triangle.infected = false;
-            triangle.mark = 0;
+            labels[index] = 0;
+            areas[index] = 0.0;
+            infected[index] = false;
+            marks[index] = 0;
 
-            for (int i = 0; i < 3; i++)
-            {
-                triangle.vertices[i] = null;
+            int i = 3 * index;
 
-                triangle.subsegs[i] = default(Osub);
-                triangle.neighbors[i] = default(Otri);
-            }
+            vertices[i] = vertices[i + 1] = vertices[i + 2] = null;
+            subsegs[i] = subsegs[i + 1] = subsegs[i + 2] = default(Osub);
+            neighbors[i] = neighbors[i + 1] = neighbors[i + 2] = 0;
         }
 
         /// <summary>
@@ -220,28 +258,24 @@ namespace TriangleNet
         {
             stack.Clear();
 
-            int blocks = (size / BLOCKSIZE) + 1;
-
-            for (int i = 0; i < blocks; i++)
-            {
-                var block = pool[i];
-
-                // Number of triangles in current block:
-                int length = Math.Min(BLOCKSIZE, size - i * BLOCKSIZE);
-
-                for (int j = 0; j < length; j++)
-                {
-                    block[j] = null;
-                }
-            }
+            Array.Clear(alive, 0, alive.Length);
+            Array.Clear(vertices, 0, vertices.Length);
+            Array.Clear(subsegs, 0, subsegs.Length);
 
             size = count = 0;
             nextId = -1;
+
+            InitializeDummy();
         }
 
         /// <inheritdoc />
         public bool Contains(Triangle item)
         {
+            if (item.pool != this)
+            {
+                return false;
+            }
+
             int i = item.hash;
 
             if (i < 0 || i >= size)
@@ -249,7 +283,7 @@ namespace TriangleNet
                 return false;
             }
 
-            return pool[i / BLOCKSIZE][i % BLOCKSIZE].hash >= 0;
+            return alive[item.index];
         }
 
         /// <inheritdoc />
@@ -291,9 +325,9 @@ namespace TriangleNet
         {
             // TODO: enumerator should be able to tell if collection changed.
 
-            int count;
+            readonly int count;
 
-            Triangle[][] pool;
+            readonly TrianglePool pool;
 
             Triangle current;
 
@@ -302,7 +336,7 @@ namespace TriangleNet
             public Enumerator(TrianglePool pool)
             {
                 this.count = pool.Count;
-                this.pool = pool.pool;
+                this.pool = pool;
 
                 index = 0;
                 offset = 0;
@@ -324,14 +358,15 @@ namespace TriangleNet
 
             public bool MoveNext()
             {
+                var alive = pool.alive;
+
                 while (index < count)
                 {
-                    current = pool[offset / BLOCKSIZE][offset % BLOCKSIZE];
-
                     offset++;
 
-                    if (current.hash >= 0)
+                    if (alive[offset])
                     {
+                        current = new Triangle(pool, offset);
                         index++;
                         return true;
                     }

@@ -23,12 +23,12 @@ namespace TriangleNet.Tests
             pool.Release(t0);
 
             Assert.That(pool.Count, Is.EqualTo(2));
-            Assert.That(t0.GetHashCode(), Is.LessThan(0));
+            Assert.That(pool.Contains(t0), Is.False);
 
             pool.Release(t1);
 
             Assert.That(pool.Count, Is.EqualTo(1));
-            Assert.That(t1.GetHashCode(), Is.LessThan(0));
+            Assert.That(pool.Contains(t1), Is.False);
 
             var t4 = pool.Get();
 

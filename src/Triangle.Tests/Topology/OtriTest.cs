@@ -34,7 +34,7 @@ namespace TriangleNet.Tests
             var triangles = new Triangle[4];
 
             // Outer space triangle.
-            var dummy = new Triangle() { id = -1 };
+            var dummy = Helper.Pool.Dummy;
 
             // Setup triangles. Keep in mind the ordering:
             //
@@ -53,30 +53,24 @@ namespace TriangleNet.Tests
             var t3 = triangles[3] = Helper.CreateTriangle(3, vertices[3], vertices[4], vertices[5]);
 
             // Setup connectivity of triangle 0.
-            t0.neighbors[0].tri = dummy;
-            t0.neighbors[1].tri = t1;
-            t0.neighbors[1].orient = 2;
-            t0.neighbors[2].tri = dummy;
+            t0.SetNeighbor(0, new Otri { tri = dummy });
+            t0.SetNeighbor(1, new Otri { tri = t1, orient = 2 });
+            t0.SetNeighbor(2, new Otri { tri = dummy });
 
             // Setup connectivity of triangle 1.
-            t1.neighbors[0].tri = t2;
-            t1.neighbors[0].orient = 2;
-            t1.neighbors[1].tri = t3;
-            t1.neighbors[1].orient = 0;
-            t1.neighbors[2].tri = t0;
-            t1.neighbors[2].orient = 1;
+            t1.SetNeighbor(0, new Otri { tri = t2, orient = 2 });
+            t1.SetNeighbor(1, new Otri { tri = t3, orient = 0 });
+            t1.SetNeighbor(2, new Otri { tri = t0, orient = 1 });
 
             // Setup connectivity of triangle 2.
-            t2.neighbors[0].tri = dummy;
-            t2.neighbors[1].tri = dummy;
-            t2.neighbors[2].tri = t1;
-            t2.neighbors[2].orient = 0;
+            t2.SetNeighbor(0, new Otri { tri = dummy });
+            t2.SetNeighbor(1, new Otri { tri = dummy });
+            t2.SetNeighbor(2, new Otri { tri = t1, orient = 0 });
 
             // Setup connectivity of triangle 3.
-            t3.neighbors[0].tri = t1;
-            t3.neighbors[0].orient = 1;
-            t3.neighbors[1].tri = dummy;
-            t3.neighbors[2].tri = dummy;
+            t3.SetNeighbor(0, new Otri { tri = t1, orient = 1 });
+            t3.SetNeighbor(1, new Otri { tri = dummy });
+            t3.SetNeighbor(2, new Otri { tri = dummy });
 
             return triangles;
         }
@@ -424,12 +418,11 @@ namespace TriangleNet.Tests
             Assert.That(t.Dest().ID, Is.EqualTo(1));
 
             // Check that the triangles don't have neighbors.
+            // (A triangle without neighbor is adjacent to the outer space triangle.)
             s.Sym(ref tmp);
-            //Assert.AreEqual(-1, tmp.tri.ID);
-            Assert.That(tmp.tri, Is.Null);
+            Assert.That(tmp.tri.hash, Is.EqualTo(Mesh.DUMMY));
             t.Sym(ref tmp);
-            //Assert.AreEqual(-1, tmp.tri.ID);
-            Assert.That(tmp.tri, Is.Null);
+            Assert.That(tmp.tri.hash, Is.EqualTo(Mesh.DUMMY));
 
             // Bond the two triangles.
             s.Bond(ref t);
@@ -445,7 +438,7 @@ namespace TriangleNet.Tests
         public void TestDissolve()
         {
             // Outer space triangle.
-            var dummy = new Triangle() { id = -1 };
+            var dummy = Helper.Pool.Dummy;
 
             var triangles = CreateExampleMesh();
 

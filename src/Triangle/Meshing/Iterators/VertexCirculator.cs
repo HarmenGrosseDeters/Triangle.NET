@@ -54,7 +54,7 @@ namespace TriangleNet.Meshing.Iterators
             // A new list for each call (enumerations may be nested).
             var cache = new List<Otri>();
 
-            if (vertex.tri.tri == null || vertex.type == VertexType.UndeadVertex)
+            if (vertex.tri.tri.IsNull || vertex.type == VertexType.UndeadVertex)
             {
                 // Not part of the mesh topology (e.g. a duplicate input vertex).
                 return cache;

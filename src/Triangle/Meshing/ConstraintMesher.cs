@@ -1199,7 +1199,7 @@ namespace TriangleNet.Meshing
 
             // Find a triangle whose origin is the segment's first endpoint.
             searchtri1 = endpoint1.tri;
-            if (searchtri1.tri != null)
+            if (!searchtri1.tri.IsNull)
             {
                 checkvertex = searchtri1.Org();
             }
@@ -1234,7 +1234,7 @@ namespace TriangleNet.Meshing
             // Find a triangle whose origin is the segment's second endpoint.
             checkvertex = null;
             searchtri2 = endpoint2.tri;
-            if (searchtri2.tri != null)
+            if (!searchtri2.tri.IsNull)
             {
                 checkvertex = searchtri2.Org();
             }

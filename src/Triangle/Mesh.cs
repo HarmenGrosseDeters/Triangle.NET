@@ -179,17 +179,9 @@ namespace TriangleNet
             dummysub.subsegs[0].seg = dummysub;
             dummysub.subsegs[1].seg = dummysub;
 
-            // Set up 'dummytri', the 'triangle' that occupies "outer space."
-            dummytri = new Triangle();
-            dummytri.hash = dummytri.id = DUMMY;
-
-            // Initialize the three adjoining triangles to be "outer space." These
-            // will eventually be changed by various bonding operations, but their
-            // values don't really matter, as long as they can legally be
-            // dereferenced.
-            dummytri.neighbors[0].tri = dummytri;
-            dummytri.neighbors[1].tri = dummytri;
-            dummytri.neighbors[2].tri = dummytri;
+            // Set up 'dummytri', the 'triangle' that occupies "outer space" (position 0 of the
+            // triangle pool, its id is DUMMY and its three adjoining triangles are "outer space").
+            dummytri = triangles.Dummy;
 
             // Initialize the three adjoining subsegments of 'dummytri' to be
             // the omnipresent subsegment.
@@ -205,14 +197,14 @@ namespace TriangleNet
         /// </summary>
         public Mesh(Configuration config, IList<Vertex> points)
         {
+            triangles = config.TrianglePool();
+
             Initialize();
 
             behavior = new Behavior();
 
             vertices = new Dictionary<int, Vertex>(points.Count);
             subsegs = new Dictionary<int, SubSegment>();
-
-            triangles = config.TrianglePool();
 
             flipstack = new Stack<Otri>();
 
@@ -542,9 +534,7 @@ namespace TriangleNet
             tri.subsegs[1].seg = dummysub;
             tri.subsegs[2].seg = dummysub;
 
-            tri.neighbors[0].tri = dummytri;
-            tri.neighbors[1].tri = dummytri;
-            tri.neighbors[2].tri = dummytri;
+            // The adjoining triangles are "outer space" (see TrianglePool.Get).
 
             newotri.tri = tri;
             newotri.orient = 0;
@@ -940,7 +930,7 @@ namespace TriangleNet
             // subsegment is found.
             success = InsertVertexResult.Successful;
 
-            if (newvertex.tri.tri != null)
+            if (!newvertex.tri.tri.IsNull)
             {
                 // Store the coordinates of the triangle that contains newvertex.
                 newvertex.tri.SetOrg(rightvertex);
@@ -1727,7 +1717,7 @@ namespace TriangleNet
                     TriangleDealloc(botleft.tri);
                     TriangleDealloc(botright.tri);
                 }
-                else if (flipstack.Peek().tri == null) // Dummy flip
+                else if (flipstack.Peek().tri.IsNull) // Dummy flip
                 {
                     // Restore two triangles that were split into four triangles,
                     // so they are again two triangles.

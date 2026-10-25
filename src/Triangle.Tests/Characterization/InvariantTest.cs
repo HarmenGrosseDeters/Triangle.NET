@@ -30,7 +30,7 @@ namespace TriangleNet.Tests.Characterization
             var plain = reference.Segments.Count == 0
                 ? (Mesh)new GenericMesher().Triangulate(reference.Points)
                 : (Mesh)reference.Triangulate(new ConstraintOptions { SnapTolerance = c.Snap });
-            double area = plain.Triangles.Sum(MeshInvariants.Area);
+            double area = plain.Triangles.Sum(t => MeshInvariants.Area(t));
 
             var errors = MeshInvariants.Check(mesh, input, c, area);
 

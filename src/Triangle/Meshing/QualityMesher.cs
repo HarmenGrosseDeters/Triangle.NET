@@ -55,7 +55,8 @@ namespace TriangleNet.Meshing
 
             newLocation = new NewLocation(mesh, predicates);
 
-            newvertex_tri = new Triangle();
+            // Holds the vertices of the triangle that contains a new vertex (not part of the mesh).
+            newvertex_tri = new TrianglePool(1).Get();
         }
 
         /// <summary>

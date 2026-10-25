@@ -106,7 +106,7 @@ namespace TriangleNet
             mesh.MakeVertexMap();
             foreach (var v in mesh.vertices.Values)
             {
-                if (v.tri.tri == null && Log.Verbose)
+                if (v.tri.tri.IsNull && Log.Verbose)
                 {
                     logger.Warning("Vertex (ID " + v.id + ") not connected to mesh (duplicate input vertex?)",
                                 "MeshValidator.IsConsistent()");

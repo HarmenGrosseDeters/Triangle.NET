@@ -659,7 +659,7 @@ namespace TriangleNet.Meshing.Algorithm
             // Find an edge on the convex hull to start point location from.
             startghost.Lprev(ref searchedge);
             searchedge.Sym();
-            mesh.dummytri.neighbors[0] = searchedge;
+            mesh.dummytri.SetNeighbor(0, searchedge);
 
             // Remove the bounding box and count the convex hull edges.
             startghost.Copy(ref dissolveedge);

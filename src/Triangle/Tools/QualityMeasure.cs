@@ -194,7 +194,7 @@ namespace TriangleNet.Tools
         /// <param name="mesh">The mesh.</param>
         public void Update(IMesh mesh)
         {
-            Update(mesh.Triangles);
+            Update(System.Linq.Enumerable.Cast<ITriangle>(mesh.Triangles));
         }
 
         /// <summary>

@@ -519,7 +519,7 @@ namespace TriangleNet.Tests.Review
                     {
                         Assert.That(t.GetNeighborID(i), Is.EqualTo(n.ID));
                         // Neighbor relation is symmetric.
-                        Assert.That(Enumerable.Range(0, 3).Any(j => n.GetNeighbor(j) == t), Is.True);
+                        Assert.That(Enumerable.Range(0, 3).Any(j => Equals(n.GetNeighbor(j), t)), Is.True);
                     }
 
                     var s = t.GetSegment(i);
@@ -626,9 +626,9 @@ namespace TriangleNet.Tests.Review
                 // (except across the boundary gap).
                 for (int i = 0; i + 1 < tris.Count; i++)
                 {
-                    Assert.That(tris[i].GetNeighbor(0) == tris[i + 1] ||
-                                tris[i].GetNeighbor(1) == tris[i + 1] ||
-                                tris[i].GetNeighbor(2) == tris[i + 1], Is.True,
+                    Assert.That(Equals(tris[i].GetNeighbor(0), tris[i + 1]) ||
+                                Equals(tris[i].GetNeighbor(1), tris[i + 1]) ||
+                                Equals(tris[i].GetNeighbor(2), tris[i + 1]), Is.True,
                         "consecutive triangles are not adjacent");
                 }
             }

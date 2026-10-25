@@ -90,7 +90,7 @@ namespace TriangleNet.Meshing.Algorithm
 
             // Link dummytri to the bounding box so we can always find an
             // edge to begin searching (point location) from.
-            mesh.dummytri.neighbors[0] = inftri;
+            mesh.dummytri.SetNeighbor(0, inftri);
         }
 
         /// <summary>
@@ -142,7 +142,7 @@ namespace TriangleNet.Meshing.Algorithm
 
             // Find a new boundary edge to search from, as the current search
             // edge lies on a bounding box triangle and will be deleted.
-            mesh.dummytri.neighbors[0] = searchedge;
+            mesh.dummytri.SetNeighbor(0, searchedge);
 
             hullsize = -2;
             while (!nextedge.Equals(finaledge))

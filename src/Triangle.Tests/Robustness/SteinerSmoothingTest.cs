@@ -59,14 +59,14 @@ namespace TriangleNet.Tests.Robustness
             // and no more triangles violate the minimum angle.
             if (c.MinAngle > 0)
             {
-                Assert.That(smoothed.Triangles.Min(MeshInvariants.MinimumAngle),
-                    Is.GreaterThanOrEqualTo(plain.Triangles.Min(MeshInvariants.MinimumAngle) - 1e-9));
+                Assert.That(smoothed.Triangles.Min(t => MeshInvariants.MinimumAngle(t)),
+                    Is.GreaterThanOrEqualTo(plain.Triangles.Min(t => MeshInvariants.MinimumAngle(t)) - 1e-9));
                 Assert.That(Bad(smoothed, c.MinAngle), Is.LessThanOrEqualTo(Bad(plain, c.MinAngle)));
             }
 
             if (c.MaxArea > 0)
             {
-                Assert.That(smoothed.Triangles.Max(MeshInvariants.Area), Is.LessThanOrEqualTo(c.MaxArea));
+                Assert.That(smoothed.Triangles.Max(t => MeshInvariants.Area(t)), Is.LessThanOrEqualTo(c.MaxArea));
             }
         }
 
@@ -80,8 +80,8 @@ namespace TriangleNet.Tests.Robustness
             var plain = c.Run(c.Input());
             var smoothed = c.With("smooth", Smooth).Run(c.Input());
 
-            double before = plain.Triangles.Average(MeshInvariants.MinimumAngle);
-            double after = smoothed.Triangles.Average(MeshInvariants.MinimumAngle);
+            double before = plain.Triangles.Average(t => MeshInvariants.MinimumAngle(t));
+            double after = smoothed.Triangles.Average(t => MeshInvariants.MinimumAngle(t));
 
             TestContext.WriteLine($"{name}: mean minimum angle {before:F2} -> {after:F2}, " +
                 $"bad {Bad(plain, c.MinAngle)} -> {Bad(smoothed, c.MinAngle)}");
@@ -121,7 +121,7 @@ namespace TriangleNet.Tests.Robustness
 
             MeshAssert.IsValid(mesh);
 
-            Assert.That(mesh.Triangles.Max(MeshInvariants.Area), Is.LessThanOrEqualTo(0.5));
+            Assert.That(mesh.Triangles.Max(t => MeshInvariants.Area(t)), Is.LessThanOrEqualTo(0.5));
         }
 
         [Test]
@@ -141,7 +141,7 @@ namespace TriangleNet.Tests.Robustness
             var plain = reference.Segments.Count == 0
                 ? (Mesh)new GenericMesher().Triangulate(reference.Points)
                 : (Mesh)reference.Triangulate(new ConstraintOptions { SnapTolerance = c.Snap });
-            double area = plain.Triangles.Sum(MeshInvariants.Area);
+            double area = plain.Triangles.Sum(t => MeshInvariants.Area(t));
 
             var errors = MeshInvariants.Check(mesh, input, configured, area);
 
