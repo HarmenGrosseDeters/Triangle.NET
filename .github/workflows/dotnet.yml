@@ -21,12 +21,12 @@ jobs:
       run: dotnet restore Triangle.sln
       working-directory: ./src
     - name: Build
-      run: dotnet build Triangle.sln --no-restore
+      run: dotnet build Triangle.sln --no-restore -c Release
       working-directory: ./src
     - name: Test
-      run: dotnet test Triangle.sln --no-build --verbosity normal --filter "TestCategory!=KnownBug"
+      run: dotnet test Triangle.sln --no-build -c Release --verbosity normal --filter "TestCategory!=KnownBug"
       working-directory: ./src
     - name: Known bugs (red tests, expected to fail)
-      run: dotnet test Triangle.sln --no-build --verbosity normal --filter "TestCategory=KnownBug"
+      run: dotnet test Triangle.sln --no-build -c Release --verbosity normal --filter "TestCategory=KnownBug"
       working-directory: ./src
       continue-on-error: true
