@@ -27,6 +27,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Triangle.Tests" />
+    <!-- The prototype of an index-based storage (Triangle.Tests/Prototype) is measured there. -->
+    <InternalsVisibleTo Include="Triangle.Benchmarks" />
   </ItemGroup>
 
 </Project>
