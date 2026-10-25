@@ -769,7 +769,10 @@ delaunator-sharp bleibt bei 100.000 Punkten mit 44–52 ms etwa doppelt so schne
   `TRIANGLE_NATURAL_EARTH_POLYGONS`): Länder, Bundesländer/Provinzen, Seen, Landflächen, Flüsse,
   jede Ebene als Ganzes (gemeinsame Grenzen fallen zusammen) und bis zu 150 Einzelobjekte je
   Ebene: 2.307 Läufe, alle gültig. Zwei Ganz-Ebenen-Läufe mit Qualität (Provinzen 20°, Seen 30°,
-  Koordinaten in Grad) brauchten länger als die 120 s des Testgerüsts.
+  Koordinaten in Grad) liefen in die 120 s des Testgerüsts. Einzeln nachgemessen: Seen bei 30°
+  (162.852 Punkte) vernetzt in 3,1 s (520.110 Dreiecke, Steiner-Limit) und ist gültig; die übrige
+  Zeit braucht die Prüfung des Testgerüsts (Klassifizierung von 375.000 schlechten Dreiecken an
+  winzigen Eingabewinkeln und schmalen Streifen).
 
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
