@@ -69,5 +69,33 @@ namespace TriangleNet.Meshing
         /// used (Ruppert's algorithm). Otherwise the aCute algorithm is used.
         /// </remarks>
         public bool UseLegacyRefinement { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether redundant Steiner points are removed after
+        /// refinement (default = <c>false</c>).
+        /// </summary>
+        /// <remarks>
+        /// Refinement inserts Steiner points greedily, and later points often make earlier ones
+        /// unnecessary. If this flag is set, a Steiner point that doesn't lie on a segment is
+        /// deleted if all triangles of the retriangulated cavity meet the quality constraints
+        /// (and don't encroach upon subsegments). Input vertices, segments and the points on
+        /// segments are not changed. Not applied if a <see cref="UserTest"/> is set.
+        /// </remarks>
+        public bool ReduceSteinerPoints { get; set; }
+
+        /// <summary>
+        /// Gets or sets the number of smoothing passes over the Steiner points after refinement
+        /// (default = 0).
+        /// </summary>
+        /// <remarks>
+        /// In each pass, every Steiner point that doesn't lie on a segment is moved towards the
+        /// position of the optimal Delaunay triangulation (the area-weighted mean of the
+        /// circumcenters of its triangles; on an output grid, rounded to the grid). A move is
+        /// kept only if the changed triangles get better, so no constraint that the mesh met
+        /// before is violated afterwards. Combined with <see cref="ReduceSteinerPoints"/>,
+        /// redundant points are removed after each pass. Input vertices, segments and the
+        /// points on segments are not changed. Not applied if <see cref="Exclude"/> is set.
+        /// </remarks>
+        public int SmoothingSteps { get; set; }
     }
 }

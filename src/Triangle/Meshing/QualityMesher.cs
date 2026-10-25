@@ -39,6 +39,10 @@ namespace TriangleNet.Meshing
 
         bool enableAcute = true;
 
+        bool reduceSteinerPoints;
+
+        int smoothingSteps;
+
         public QualityMesher(Mesh mesh, Configuration config)
         {
             badsubsegs = new Queue<BadSubseg>();
@@ -79,6 +83,9 @@ namespace TriangleNet.Meshing
                 mesh.steinerleft = quality.SteinerPoints == 0 ? -1 : quality.SteinerPoints;
 
                 enableAcute = !quality.UseLegacyRefinement;
+
+                reduceSteinerPoints = quality.ReduceSteinerPoints;
+                smoothingSteps = quality.SmoothingSteps;
             }
 
             // Ensure that no vertex can be mistaken for a triangular bounding
@@ -1394,6 +1401,22 @@ namespace TriangleNet.Meshing
         /// <summary>
         /// Remove all the encroached subsegments and bad triangles from the triangulation.
         /// </summary>
+        /// <summary>
+        /// Smooth and remove Steiner points (see <see cref="QualityOptions.SmoothingSteps"/>
+        /// and <see cref="QualityOptions.ReduceSteinerPoints"/>).
+        /// </summary>
+        private void OptimizeSteinerPoints(CancellationToken cancellationToken)
+        {
+            var smoother = smoothingSteps > 0 ? new SteinerSmoother(mesh, predicates, gridSize) : null;
+            var reducer = reduceSteinerPoints ? new SteinerReducer(mesh, predicates, gridSize) : null;
+
+            for (int i = 0; i < Math.Max(1, smoothingSteps); i++)
+            {
+                smoother?.Apply(cancellationToken);
+                reducer?.Apply(cancellationToken);
+            }
+        }
+
         private void EnforceQuality(CancellationToken cancellationToken)
         {
             BadTriangle badtri;
@@ -1442,6 +1465,11 @@ namespace TriangleNet.Meshing
             // At this point, if the "-D" switch was selected and we haven't run out
             // of Steiner points, the triangulation should be (conforming) Delaunay
             // and have no low-quality triangles.
+
+            if (reduceSteinerPoints || smoothingSteps > 0)
+            {
+                OptimizeSteinerPoints(cancellationToken);
+            }
 
             CheckOrientation();
 

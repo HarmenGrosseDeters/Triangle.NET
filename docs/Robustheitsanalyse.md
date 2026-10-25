@@ -381,9 +381,21 @@ liegen (ein Heap-Objekt pro Dreieck statt vier). Der Zugriff läuft über kleine
 | `-p:TriangleLayout=Fields` | einzelne Felder in allen Zielplattformen |
 | `-p:TriangleLayout=Arrays` | Arrays in allen Zielplattformen (altes Verhalten) |
 
-Alle Tests laufen in allen drei Varianten grün, die Golden-Fingerprints sind gleich. Ob `Fields`
-unter net48 schneller ist, muss auf Windows gemessen werden (der JIT von .NET Framework inlinet
-anders als .NET 8; hier läuft kein net48). `Triangle.Benchmarks` baut dafür zusätzlich `net48`:
+Alle Tests laufen in allen drei Varianten grün, die Golden-Fingerprints sind gleich. Auf .NET 10
+(BenchmarkDotNet, je zwei Runden abwechselnd) ist `Fields` aber langsamer als `Arrays`, der
+`ref`-Indexer mit Verzweigung kostet mehr, als die gesparten Objekte bringen:
+
+| Szenario | Arrays | Fields | InlineArray |
+|----------|-------:|-------:|------------:|
+| kleine Kachel 30° | 9,1 ms | 10,8 ms | 8,6 ms |
+| kleine Kachel 20° | 25,6 ms | 29,3 ms | 23,7 ms |
+| Zufallspunkte 30° | 32,2 ms | 35,1 ms | 29,7 ms |
+| Kachel 30°, Snap 1 cm | 474 ms | 506 ms | 410 ms |
+| Kachel 30°, Raster + Keil | 400 ms | 402 ms | 338 ms |
+
+Unter net48 kann es anders aussehen (anderer JIT und GC); hier läuft kein net48. Deshalb bleibt
+`Arrays` der Standard für `netstandard2.0`. `Triangle.Benchmarks` baut für den Vergleich auf
+Windows zusätzlich `net48`:
 
 ```
 dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Arrays -- --filter "*"
@@ -549,6 +561,67 @@ vorherigen Runden:
 | GEOS Isochronen am Steiner-Limit (20° / 30°) | 13 / 20 | 13 / 20 (unverändert, echte Feinstrukturen) |
 | Herne Nutzung, Snap 1 cm (ungerundet) | 8,70 % / 10,74 %, 1–2 Kacheln am Limit | 1,10 % / 0,98 %, kein Limit |
 | Herne Nutzung ohne Snap | lief nicht durch | läuft durch, aber 110 von 201 Kacheln am Limit, 78 % schlecht: Snap ist nötig |
+
+## Steiner-Punkte ausdünnen und glätten (`SteinerReductionTest`, `SteinerSmoothingTest`)
+
+Recherche (Oktober 2026) nach neueren, integrierbaren Verfahren. Die Grundverfahren sind älter und
+im Fork schon enthalten (Off-Center nach Üngör, aCute nach Erten/Üngör, Snap-Rounding,
+Greedy Insertion). Übernommen wurden zwei Ideen, die auf einem fertigen Qualitätsnetz arbeiten:
+
+* **Lokale Suche über Steiner-Punkte** (Abrahamsen, Brunck, Conradi, Kolbe, Nusser: „Computing
+  Non-Obtuse Triangulations with Few Steiner Points“, SoCG 2025, Gewinner der CG:SHOP Challenge
+  2025): eine constrained Delaunay-Triangulierung, in der Steiner-Punkte entfernt, verschoben
+  oder hinzugefügt werden, je nachdem, was das Netz am meisten verbessert. Ähnlich „Delaunay
+  Sifting“: Steiner-Punkte entfernen, ohne die Qualitätsmaße zu verschlechtern.
+* **Optimale Delaunay-Triangulierung (ODT)** (Chen/Xu 2004, Alliez u. a. 2005) und die
+  Verzahnung von Verfeinerung und Optimierung (Tournois, Alliez, Devillers, IMR 2007: weniger
+  Steiner-Punkte und bessere Qualität als reine Delaunay-Verfeinerung).
+
+Nicht übernommen: exakte implizite Punkte (Attene 2020, Diazzi u. a. 2023; die Ausgabe braucht
+ohnehin Raster-/Gleitkommakoordinaten), Stable Snap Rounding, randomisiertes Einfügen von
+Segmenten (GIS-Segmente sind kurz), parallele und lernende Verfahren (nicht deterministisch).
+
+Umsetzung (beide optional, Standard aus; Eingabepunkte, Segmente und Punkte auf Segmenten
+werden nie verändert, gesperrte Kanten also auch nicht):
+
+* `QualityOptions.ReduceSteinerPoints`: Ein freier Steiner-Punkt wird gelöscht, wenn alle
+  Dreiecke der Delaunay-Triangulierung seines Hohlraums die Qualitätsvorgaben erfüllen (ohne die
+  Ausnahmen der Verfeinerung, z. B. das Rasterminimum) und kein Teilsegment verletzen. Der
+  Hohlraum wird vorab genauso trianguliert wie bei `Mesh.DeleteVertex`. Geht das nicht, wird ein
+  benachbarter freier Punkt auf die Mitte der gemeinsamen Kante geschoben (Kantenkollaps), wenn
+  der Punkt danach entfernbar ist und kein anderes Dreieck schlechter wird als vorher. Die Flips
+  dieser Verschiebung werden sonst exakt rückgängig gemacht.
+* `QualityOptions.SmoothingSteps`: Durchläufe, in denen jeder freie Steiner-Punkt zur
+  ODT-Position (flächengewichtetes Mittel der Umkreismittelpunkte seiner Dreiecke) oder halb
+  dorthin rückt, im Rastermodus auf das Raster gerundet, mit Delaunay-Flips (nie über
+  Teilsegmente). Behalten wird die Verschiebung nur, wenn die geänderten Dreiecke besser werden
+  (weniger Verletzungen, sonst größerer kleinster Winkel). Kombiniert wird nach jedem Durchlauf
+  ausgedünnt.
+
+Ergebnis (Dreiecke, in Klammern Dreiecke unter dem Mindestwinkel; ALKIS-Kacheln Herne):
+
+| Szenario | ohne | ausdünnen | 3× glätten | 3× glätten + ausdünnen |
+|----------|-----:|----------:|-----------:|-----------------------:|
+| Kachel 30°, Snap 1 cm | 107.190 (1.147) | 104.312 (1.147) | 107.190 (1.147) | 103.984 (1.147), −3,0 % |
+| Kachel 30°, Raster 1 cm + Keil 3 cm | 112.353 (3.319) | 97.015 (3.207) | 112.353 (3.153) | 92.167 (3.120), −18,0 % |
+| kleine Kachel 20°, Snap 1 cm | 8.952 (184) | 8.596 (184) | 8.952 (184) | 8.514 (184), −4,9 % |
+| Zufallspunkte 30° | 13.679 (0) | 13.587 (0) | 13.679 (0) | 13.567 (0), −0,8 % |
+
+Im Rastermodus lohnt es sich am meisten: Die gerundeten Steiner-Punkte der Verfeinerung
+liegen oft dichter als nötig. Glätten hebt den mittleren kleinsten Winkel um 0,1–0,5°.
+Durch das Ausdünnen sinkt er leicht, weil weniger Punkte da sind; der Mindestwinkel bleibt
+eingehalten. Die schlechten Dreiecke an kleinen Eingabewinkeln bleiben (sie hängen an
+Eingabepunkten und Segmenten).
+
+Mit `ConformingDelaunay` (so ruft der Fallback im alten Repo auf) dieselbe Kachel mit Raster:
+136.265 Dreiecke (5.516 schlecht), ausgedünnt 119.271 (−12,5 %), geglättet und ausgedünnt
+112.713 (−17,3 %, 5.210 schlecht). Laufzeit (Minimum aus drei Läufen): 0,5 s, 1,3 s, 2,7 s,
+nur geglättet 0,7 s.
+
+Tests: alle Qualitätsszenarien des Katalogs mit allen Invarianten (Konsistenz, constrained bzw.
+conforming Delaunay, Fläche, Segmente, gesperrte Segmente, Winkelgarantie), dazu: nur freie
+Steiner-Punkte ändern sich, Segmente identisch, nicht mehr schlechte Dreiecke, kleinster Winkel
+sinkt beim Glätten nie, Maximalfläche und -winkel, Raster, `UserTest`, Determinismus.
 
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
