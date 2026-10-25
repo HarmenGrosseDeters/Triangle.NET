@@ -121,6 +121,140 @@ namespace TriangleNet
 
         #endregion
 
+        #region Very small and very large coordinates
+
+        // The adaptive predicates are exact as long as no product (including the error terms)
+        // underflows or overflows. This holds if all nonzero coordinates have magnitudes in
+        // [2^-100, 2^100]: the differences are zero or at least 2^-152, the products of the
+        // in-circle test (degree 4, with their error terms) stay far from subnormal numbers and
+        // from overflow. Otherwise the sign is computed with integers.
+        private const double MinCoordinate = 7.888609052210118e-31;  // 2^-100
+        private const double MaxCoordinate = 1.2676506002282294e30;  // 2^100
+
+        // The orientation filter needs a sum of the products which isn't subnormal (for
+        // coordinates in range the products are at least 2^-304 or exactly zero).
+        private const double MinMagnitude = 1e-200;
+
+        private const double MinDifference = 6.223015277861142e-61;  // 2^-200
+        private const double MaxDifference = 1.6069380442589903e60;  // 2^200
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static bool SafeDifference(double d)
+        {
+            double a = Math.Abs(d);
+            return (a >= MinDifference && a <= MaxDifference) || a == 0.0;
+        }
+
+        private static bool InRange(double x)
+        {
+            double a = Math.Abs(x);
+            return a == 0.0 || (a >= MinCoordinate && a <= MaxCoordinate);
+        }
+
+        private static bool InRange(Point a, Point b, Point c)
+        {
+            return InRange(a.x) && InRange(a.y) && InRange(b.x) && InRange(b.y) && InRange(c.x) && InRange(c.y);
+        }
+
+        private static bool InRange(Point a, Point b, Point c, Point d)
+        {
+            return InRange(a, b, c) && InRange(d.x) && InRange(d.y);
+        }
+
+        /// <summary>
+        /// The approximation if it has the exact sign, otherwise the sign.
+        /// </summary>
+        private static double ExactResult(int sign, double approximation)
+        {
+            if (sign == 0) return 0.0;
+
+            // NaN (overflow) fails both comparisons.
+            bool same = sign > 0 ? approximation > 0.0 : approximation < 0.0;
+
+            return same && !double.IsInfinity(approximation) ? approximation : sign;
+        }
+
+        /// <summary>
+        /// Exact sign of the orientation determinant with integers (every double is m * 2^e).
+        /// </summary>
+        internal static int CounterClockwiseExact(Point pa, Point pb, Point pc)
+        {
+            var v = ToIntegers(pa.x, pa.y, pb.x, pb.y, pc.x, pc.y);
+            System.Numerics.BigInteger acx = v[0] - v[4], acy = v[1] - v[5], bcx = v[2] - v[4], bcy = v[3] - v[5];
+            return (acx * bcy - acy * bcx).Sign;
+        }
+
+        /// <summary>
+        /// Exact sign of the in-circle determinant with integers.
+        /// </summary>
+        internal static int InCircleExact(Point pa, Point pb, Point pc, Point pd)
+        {
+            var v = ToIntegers(pa.x, pa.y, pb.x, pb.y, pc.x, pc.y, pd.x, pd.y);
+            System.Numerics.BigInteger adx = v[0] - v[6], ady = v[1] - v[7], bdx = v[2] - v[6], bdy = v[3] - v[7], cdx = v[4] - v[6], cdy = v[5] - v[7];
+            return ((adx * adx + ady * ady) * (bdx * cdy - cdx * bdy)
+                  + (bdx * bdx + bdy * bdy) * (cdx * ady - adx * cdy)
+                  + (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady)).Sign;
+        }
+
+        /// <summary>
+        /// All values as integers with a common power-of-two scale.
+        /// </summary>
+        private static System.Numerics.BigInteger[] ToIntegers(params double[] values)
+        {
+            int n = values.Length;
+            var mantissa = new long[n];
+            var exponent = new int[n];
+            int emin = int.MaxValue;
+
+            for (int i = 0; i < n; i++)
+            {
+                double v = values[i];
+
+                if (double.IsNaN(v) || double.IsInfinity(v))
+                {
+                    throw new ArgumentException("Coordinates must be finite.");
+                }
+
+                long bits = BitConverter.DoubleToInt64Bits(v);
+                int e = (int)((bits >> 52) & 0x7FF);
+                long frac = bits & 0xFFFFFFFFFFFFFL;
+
+                if (e == 0)
+                {
+                    exponent[i] = -1074; // zero or subnormal
+                }
+                else
+                {
+                    frac |= 1L << 52;
+                    exponent[i] = e - 1075;
+                }
+
+                mantissa[i] = bits < 0 ? -frac : frac;
+
+                if (mantissa[i] != 0)
+                {
+                    emin = Math.Min(emin, exponent[i]);
+                }
+            }
+
+            if (emin == int.MaxValue)
+            {
+                emin = 0;
+            }
+
+            var result = new System.Numerics.BigInteger[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                result[i] = mantissa[i] == 0 ? System.Numerics.BigInteger.Zero
+                    : new System.Numerics.BigInteger(mantissa[i]) << (exponent[i] - emin);
+            }
+
+            return result;
+        }
+
+        #endregion
+
         /// <summary>
         /// Initializes a new instance of the <see cref="RobustPredicates" /> class.
         /// </summary>
@@ -145,6 +279,10 @@ namespace TriangleNet
                 return det;
             }
 
+            // Shewchuk's error bounds don't hold if the products underflow (subnormal or zero)
+            // or overflow (infinity, NaN). With different signs of the products the sign of
+            // det is right anyway (rounding never changes the sign of a product, and a product
+            // rounded to zero is smaller than the other one). NaN fails all comparisons.
             if (detleft > 0.0)
             {
                 if (detright <= 0.0)
@@ -169,16 +307,30 @@ namespace TriangleNet
             }
             else
             {
-                return det;
+                // detleft is zero (or NaN): det = -detright is right if detleft is exactly zero
+                // (a factor is zero) and detright isn't a product rounded to zero.
+                if ((pa.x == pc.x || pb.y == pc.y) &&
+                    (detright != 0.0 ? !double.IsNaN(detright) : (pa.y == pc.y || pb.x == pc.x)))
+                {
+                    return det;
+                }
+
+                return ExactResult(CounterClockwiseExact(pa, pb, pc), det);
             }
 
             errbound = ccwerrboundA * detsum;
-            if ((det >= errbound) || (-det >= errbound))
+            if (detsum >= MinMagnitude && ((det >= errbound) || (-det >= errbound)))
             {
                 return det;
             }
 
             Statistic.CounterClockwiseAdaptCount++;
+
+            if (!InRange(pa, pb, pc))
+            {
+                return ExactResult(CounterClockwiseExact(pa, pb, pc), det);
+            }
+
             return CounterClockwiseAdapt(pa, pb, pc, detsum);
         }
 
@@ -224,13 +376,27 @@ namespace TriangleNet
             permanent = (Math.Abs(bdxcdy) + Math.Abs(cdxbdy)) * alift
                       + (Math.Abs(cdxady) + Math.Abs(adxcdy)) * blift
                       + (Math.Abs(adxbdy) + Math.Abs(bdxady)) * clift;
+
+            // Shewchuk's error bound needs products which neither underflow nor overflow: a
+            // subnormal product, multiplied with a large lift, can exceed the bound. With all
+            // differences zero or in [2^-200, 2^200] the products of degree 4 are in
+            // [2^-800, 2^800].
+            bool valid = SafeDifference(adx) && SafeDifference(bdx) && SafeDifference(cdx)
+                && SafeDifference(ady) && SafeDifference(bdy) && SafeDifference(cdy);
+
             errbound = iccerrboundA * permanent;
-            if ((det > errbound) || (-det > errbound))
+            if (valid && ((det > errbound) || (-det > errbound)))
             {
                 return det;
             }
 
             Statistic.InCircleAdaptCount++;
+
+            if (!InRange(pa, pb, pc, pd))
+            {
+                return ExactResult(InCircleExact(pa, pb, pc, pd), det);
+            }
+
             return InCircleAdapt(pa, pb, pc, pd, permanent);
         }
 
