@@ -77,8 +77,20 @@ namespace TriangleNet.Tests.Corpus
 
             try
             {
-                var quality = minAngle > 0 ? new QualityOptions { MinimumAngle = minAngle, SteinerPoints = steinerPoints } : null;
-                mesh = (Mesh)poly.Triangulate(new ConstraintOptions { SnapTolerance = snapTolerance, GridSize = gridSize, WedgeTolerance = wedgeTolerance }, quality);
+                var quality = minAngle > 0 ? new QualityOptions
+                {
+                    MinimumAngle = minAngle,
+                    SteinerPoints = steinerPoints,
+                    ReduceSteinerPoints = Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_REDUCE") == "1",
+                    SmoothingSteps = int.TryParse(Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_SMOOTH"), out var steps) ? steps : 0
+                } : null;
+                mesh = (Mesh)poly.Triangulate(new ConstraintOptions
+                {
+                    SnapTolerance = snapTolerance,
+                    GridSize = gridSize,
+                    WedgeTolerance = wedgeTolerance,
+                    ConformingDelaunay = Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_CONFORMING") == "1"
+                }, quality);
             }
             catch (ArgumentException) when (poly.Points.Any(p => !IsFinite(p.X) || !IsFinite(p.Y)))
             {

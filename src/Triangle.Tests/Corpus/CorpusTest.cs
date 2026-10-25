@@ -35,6 +35,9 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_CORPUS_ROUND count triangles flipped by rounding to this grid (default 0 = off,
     ///                         the output grid if set)
     ///   TRIANGLE_CORPUS_ANGLES comma separated minimum angles (default 0,20; 0 = no quality)
+    ///   TRIANGLE_CORPUS_REDUCE 1 = QualityOptions.ReduceSteinerPoints
+    ///   TRIANGLE_CORPUS_SMOOTH QualityOptions.SmoothingSteps (default 0)
+    ///   TRIANGLE_CORPUS_CONFORMING 1 = ConstraintOptions.ConformingDelaunay
     ///
     /// Run: dotnet test --filter TestCategory=Corpus
     /// </remarks>
