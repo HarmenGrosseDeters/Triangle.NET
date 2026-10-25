@@ -735,6 +735,42 @@ Die leeren Ergebnisse entsprechen den Erwartungen von earcut (0 Dreiecke für en
 Eingaben). Lochringe ohne Fläche (earcut `water-huge`, `issue83`) warfen vorher eine Exception;
 jetzt werden ihre Kanten als Linien übernommen (earcut ignoriert solche Löcher).
 
+### Prototyp: Dreiecke als Indizes statt Objekte
+
+`src/Triangle.Tests/Prototype`: derselbe Divide-and-Conquer-Algorithmus (Kopie von `Dwyer`,
+nur `Otri` ersetzt) auf einer index-basierten Ablage: alle Ecken in einem `Vertex[]`, alle
+Nachbarn in einem `int[]` (Dreieck · 4 + Ausrichtung), so wie delaunator-sharp und
+BurstTriangulator. Ergebnis identisch (gleiche Dreiecke). Delaunay, Median, .NET 10:
+
+| Punkte | Objekte (InlineArray, net8) | Indizes | Faktor | Objekte (Arrays, wie net48) | Indizes | Faktor |
+|-------:|----------:|--------:|------:|----------:|--------:|------:|
+| 10.000 Gitter | 13,3 ms | 9,4 ms | 1,4 | 13,0 ms | 8,5 ms | 1,5 |
+| 10.000 zufällig | 10,0 ms | 9,6 ms | 1,05 | 9,0 ms | 7,4 ms | 1,2 |
+| 100.000 Gitter | 163 ms | 90 ms | 1,8 | 147 ms | 91 ms | 1,6 |
+| 100.000 zufällig | 124 ms | 90 ms | 1,4 | 150 ms | 91 ms | 1,7 |
+| 1 Mio. Gitter | 2.124 ms | 1.204 ms | 1,8 | 3.355 ms | 1.374 ms | 2,4 |
+| 1 Mio. zufällig | 2.415 ms | 1.514 ms | 1,6 | 3.205 ms | 1.420 ms | 2,3 |
+
+Mit kleinem Gen-0-Budget (4 MB, eher wie ein Desktop-GC unter net48) und `Arrays`: Faktor 2,0–3,2.
+delaunator-sharp bleibt bei 100.000 Punkten mit 44–52 ms etwa doppelt so schnell wie der Prototyp
+(die Punkte sind dort auch nur Koordinaten-Arrays, und es verwendet keine exakten Prädikate).
+
+### Weitere Korpora: NRW-Städte, CGAL, Natural Earth Polygone
+
+* **ALKIS Münster, Köln, Kreis Höxter** (opengeodata.nrw.de, Flurstücke, Gebäude, Nutzungen; je
+  250 gleichmäßig verteilte 200-m-Kacheln, Raster 1 cm, Keil 3 cm, 20° und 30°): 1.504 Läufe,
+  alle gültig. Schlechte Dreiecke (bei 30°): Münster 0,56 %, Köln 0,70 %, Höxter 0,20 %
+  (Herne: 2,2 %, dort mit vielen fast deckungsgleichen Gebäude- und Nutzungsgrenzen).
+  OSM (Overpass, Geofabrik) war aus der Testumgebung nicht erreichbar.
+* **CGAL** (`CorpusTest.CgalData`, `TRIANGLE_CGAL`): 36 Sonderfälle von Polygon_repair
+  (Schleifen, Bowtie, Löcher auf dem Rand, Hin-und-zurück-Kanten, sich kreuzende Polygone) und 172
+  Polygone mit Löchern von Straight_skeleton_2, ohne Qualität, 20° und 30°: alle gültig.
+* **Natural Earth 10m Polygone** (`CorpusTest.NaturalEarthPolygons`,
+  `TRIANGLE_NATURAL_EARTH_POLYGONS`): Länder, Bundesländer/Provinzen, Seen, Landflächen, Flüsse,
+  jede Ebene als Ganzes (gemeinsame Grenzen fallen zusammen) und bis zu 150 Einzelobjekte je
+  Ebene: 2.307 Läufe, alle gültig. Zwei Ganz-Ebenen-Läufe mit Qualität (Provinzen 20°, Seen 30°,
+  Koordinaten in Grad) brauchten länger als die 120 s des Testgerüsts.
+
 ## Klassenweises Review (`src/Triangle.Tests/Review`)
 
 Alle 80 Quelldateien wurden in sechs Bereichen auf Fehler untersucht; jede Vermutung wurde mit

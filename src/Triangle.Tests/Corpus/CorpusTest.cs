@@ -30,6 +30,11 @@ namespace TriangleNet.Tests.Corpus
     ///   TRIANGLE_PUBLIC_FIXTURES directory with clones of https://github.com/mapbox/earcut,
     ///                         https://github.com/mapbox/delaunator and https://github.com/jhasse/poly2tri
     ///                         (test fixtures of other triangulation libraries, ISC/BSD licensed)
+    ///   TRIANGLE_CGAL         sparse checkout of https://github.com/CGAL/cgal with
+    ///                         Polygon_repair/test/Polygon_repair/data and Straight_skeleton_2/test/Straight_skeleton_2/data
+    ///   TRIANGLE_NATURAL_EARTH_POLYGONS directory with Natural Earth polygon layers (ne_*.geojson,
+    ///                         e.g. ne_10m_admin_0_countries, ne_10m_lakes): each layer as a whole
+    ///                         and each feature separately (at most TRIANGLE_CORPUS_TILES per layer)
     ///   TRIANGLE_CORPUS_TILES maximum number of tiles (default 200)
     ///   TRIANGLE_CORPUS_TILE  tile size in meters (default 200)
     ///   TRIANGLE_CORPUS_SNAP  snap tolerance (ConstraintOptions.SnapTolerance, default 0)
@@ -97,6 +102,56 @@ namespace TriangleNet.Tests.Corpus
             }
 
             RunCases(CorpusReaders.ReadPublicFixtures(directory));
+        }
+
+        [Test]
+        public void CgalData()
+        {
+            var directory = Environment.GetEnvironmentVariable("TRIANGLE_CGAL");
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                Assert.Ignore("TRIANGLE_CGAL not set.");
+            }
+
+            RunCases(CorpusReaders.ReadCgal(directory));
+        }
+
+        [Test]
+        public void NaturalEarthPolygons()
+        {
+            var directory = Environment.GetEnvironmentVariable("TRIANGLE_NATURAL_EARTH_POLYGONS");
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                Assert.Ignore("TRIANGLE_NATURAL_EARTH_POLYGONS not set.");
+            }
+
+            var cases = new List<CorpusCase>();
+
+            foreach (var path in Directory.GetFiles(directory, "ne_*.geojson").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var features = CorpusReaders.ReadGeoJsonFeatures(path);
+                var file = Path.GetFileNameWithoutExtension(path);
+
+                // The whole layer (shared borders of neighboring polygons coincide) ...
+                var all = new CorpusCase { Name = file };
+                foreach (var f in features) all.Lines.AddRange(f.Rings);
+                cases.Add(all);
+
+                // ... and each feature (country, lake, ...) separately, sampled evenly.
+                double step = Math.Max(1.0, (double)features.Count / MaxTiles());
+
+                for (double k = 0; k < features.Count; k += step)
+                {
+                    var f = features[(int)k];
+                    var c = new CorpusCase { Name = file + "/" + f.Name };
+                    c.Lines.AddRange(f.Rings);
+                    cases.Add(c);
+                }
+            }
+
+            RunCases(cases);
         }
 
         [Test]
