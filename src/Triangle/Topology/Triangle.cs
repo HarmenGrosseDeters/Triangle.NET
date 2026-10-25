@@ -8,6 +8,7 @@
 namespace TriangleNet.Topology
 {
     using System;
+    using System.Runtime.CompilerServices;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -21,7 +22,17 @@ namespace TriangleNet.Topology
         // The ID is only used for mesh output.
         internal int id;
 
-#if NET8_0_OR_GREATER
+#if FIELD_LAYOUT
+        // Fields with ref-returning indexers (one heap object per triangle, also on
+        // netstandard2.0, e.g. .NET Framework 4.8). Build with -p:TriangleLayout=Fields.
+        private Vertex vertex0, vertex1, vertex2;
+        private Otri neighbor0, neighbor1, neighbor2;
+        private Osub subseg0, subseg1, subseg2;
+
+        internal VertexList vertices => new VertexList(this);
+        internal NeighborList neighbors => new NeighborList(this);
+        internal SubsegList subsegs => new SubsegList(this);
+#elif NET8_0_OR_GREATER && !ARRAY_LAYOUT
         // The vertices, adjoining triangles and subsegments are stored inline. With arrays, a
         // triangle consists of four objects on the heap, which make up more than half of all
         // allocations of a quality mesh and a large part of the garbage collection time.
@@ -44,6 +55,48 @@ namespace TriangleNet.Topology
         {
             // The vertices, adjoining subsegments and triangles are null (default).
         }
+
+#if FIELD_LAYOUT
+        internal readonly struct VertexList
+        {
+            private readonly Triangle o;
+
+            public VertexList(Triangle o) { this.o = o; }
+
+            public ref Vertex this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.vertex0 : ref index == 1 ? ref o.vertex1 : ref o.vertex2;
+            }
+        }
+
+        internal readonly struct NeighborList
+        {
+            private readonly Triangle o;
+
+            public NeighborList(Triangle o) { this.o = o; }
+
+            public ref Otri this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.neighbor0 : ref index == 1 ? ref o.neighbor1 : ref o.neighbor2;
+            }
+        }
+
+        internal readonly struct SubsegList
+        {
+            private readonly Triangle o;
+
+            public SubsegList(Triangle o) { this.o = o; }
+
+            public ref Osub this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.subseg0 : ref index == 1 ? ref o.subseg1 : ref o.subseg2;
+            }
+        }
+
+#endif
 
         #region Public properties
 

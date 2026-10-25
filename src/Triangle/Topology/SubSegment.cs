@@ -8,6 +8,7 @@
 namespace TriangleNet.Topology
 {
     using System;
+    using System.Runtime.CompilerServices;
     using TriangleNet.Geometry;
 
     /// <summary>
@@ -18,7 +19,16 @@ namespace TriangleNet.Topology
         // Hash for dictionary. Will be set by mesh instance.
         internal int hash;
 
-#if NET8_0_OR_GREATER
+#if FIELD_LAYOUT
+        // Fields with ref-returning indexers (see Triangle).
+        private Osub subseg0, subseg1;
+        private Vertex vertex0, vertex1, vertex2, vertex3;
+        private Otri triangle0, triangle1;
+
+        internal SubsegList subsegs => new SubsegList(this);
+        internal VertexList vertices => new VertexList(this);
+        internal TriangleList triangles => new TriangleList(this);
+#elif NET8_0_OR_GREATER && !ARRAY_LAYOUT
         // Stored inline instead of arrays (fewer objects on the heap, see Triangle).
         internal Buffer2<Osub> subsegs;
         internal Buffer4<Vertex> vertices;
@@ -38,6 +48,48 @@ namespace TriangleNet.Topology
             // The vertices, adjoining subsegments and triangles are null (default), the
             // boundary marker is zero.
         }
+
+#if FIELD_LAYOUT
+        internal readonly struct SubsegList
+        {
+            private readonly SubSegment o;
+
+            public SubsegList(SubSegment o) { this.o = o; }
+
+            public ref Osub this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.subseg0 : ref o.subseg1;
+            }
+        }
+
+        internal readonly struct VertexList
+        {
+            private readonly SubSegment o;
+
+            public VertexList(SubSegment o) { this.o = o; }
+
+            public ref Vertex this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.vertex0 : ref index == 1 ? ref o.vertex1 : ref index == 2 ? ref o.vertex2 : ref o.vertex3;
+            }
+        }
+
+        internal readonly struct TriangleList
+        {
+            private readonly SubSegment o;
+
+            public TriangleList(SubSegment o) { this.o = o; }
+
+            public ref Otri this[int index]
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => ref index == 0 ? ref o.triangle0 : ref o.triangle1;
+            }
+        }
+
+#endif
 
         #region Public properties
 

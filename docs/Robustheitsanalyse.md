@@ -368,6 +368,40 @@ vergleichbar, die CPU-Leistung schwankte dort um 20–25 %):
 
 Der Herne-Korpus (201 Kacheln, Raster + Keil) läuft in 60/92 s statt 109/180 s (20°/30°).
 
+#### Speicherlayout für .NET Framework 4.8 (`TriangleLayout`)
+
+`[InlineArray]` gibt es erst ab .NET 8. Für `netstandard2.0` (also net48) lässt sich beim Bauen
+ein Layout wählen, bei dem Ecken, Nachbarn und Teilsegmente als einzelne Felder im Objekt
+liegen (ein Heap-Objekt pro Dreieck statt vier). Der Zugriff läuft über kleine Strukturen mit
+`ref`-Indexer, der übrige Code bleibt unverändert:
+
+| Eigenschaft | Layout |
+|-------------|--------|
+| (Standard) | `net8.0`: InlineArray, `netstandard2.0`: Arrays |
+| `-p:TriangleLayout=Fields` | einzelne Felder in allen Zielplattformen |
+| `-p:TriangleLayout=Arrays` | Arrays in allen Zielplattformen (altes Verhalten) |
+
+Alle Tests laufen in allen drei Varianten grün, die Golden-Fingerprints sind gleich. Ob `Fields`
+unter net48 schneller ist, muss auf Windows gemessen werden (der JIT von .NET Framework inlinet
+anders als .NET 8; hier läuft kein net48). `Triangle.Benchmarks` baut dafür zusätzlich `net48`:
+
+```
+dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Arrays -- --filter "*"
+dotnet run -c Release -f net48 --project src/Triangle.Benchmarks -p:TriangleLayout=Fields -- --filter "*"
+```
+
+Mit `TRIANGLE_BENCH_SCENARIOS=herne_373600_5709000/q30-snap1cm` (kommagetrennt) lässt sich die
+Auswahl einschränken. Läufe abwechselnd starten, da die CPU-Leistung schwanken kann.
+
+Einbinden im eigenen Projekt, wenn `Fields` gewinnt:
+
+```xml
+<ProjectReference Include="..\Triangle.NET\src\Triangle\Triangle.csproj"
+                  AdditionalProperties="TriangleLayout=Fields" />
+```
+
+oder beim Bauen `msbuild /p:TriangleLayout=Fields` bzw. `dotnet build -p:TriangleLayout=Fields`.
+
 ## Standard-Benchmarks für CDT (`BenchmarkDatasetsTest`, Korpus)
 
 Immer im Testlauf (`Robustness/BenchmarkDatasetsTest.cs`, Daten in `Robustness/Data`):
