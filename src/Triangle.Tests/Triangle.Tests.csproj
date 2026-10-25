@@ -22,6 +22,7 @@
   <ItemGroup>
     <None Include="Characterization\Data\*.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Robustness\Data\*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Robustness\Data\Public\*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
