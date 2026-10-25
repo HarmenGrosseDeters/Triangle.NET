@@ -2336,6 +2336,7 @@ namespace TriangleNet
                     break;
             }
             tempotri = badotri;
+            Otri previous = tempotri;
             // add first point as the end of first edge
             points[numvertices] = second_x;
             numvertices++;
@@ -2349,6 +2350,18 @@ namespace TriangleNet
                 // find the neighbor's third point where it is incident to given edge
                 if (!GetNeighborsVertex(tempotri, first_x, first_y, second_x, second_y, ref returnPoint, ref neighotri))
                 {
+                    // Two triangles sharing two edges (invalid topology) would be visited back
+                    // and forth. A free vertex has at least three triangles around it, so in a
+                    // valid mesh the walk never returns to the previous triangle. (From the
+                    // SoftSmile-Inc fork of Triangle.NET.)
+                    if (neighotri.tri == previous.tri)
+                    {
+                        numvertices = 0;
+                        break;
+                    }
+
+                    previous = tempotri;
+
                     // go to next triangle
                     tempotri = neighotri;
                     // now the second point is the neighbor's third vertex
