@@ -28,7 +28,9 @@ namespace TriangleNet.Rendering.Buffer
             return buffer;
         }
 
-        public static IBuffer<uint> Create(IEnumerable<ITriangle> elements, int size)
+        // Generic, so that mesh.Triangles (a collection of Triangle values) can be passed without
+        // conversion (covariance doesn't apply to value types).
+        public static IBuffer<uint> Create<T>(IEnumerable<T> elements, int size) where T : ITriangle
         {
             var buffer = new IndexBuffer(size * elements.Count(), size);
 
