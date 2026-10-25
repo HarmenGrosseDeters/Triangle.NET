@@ -334,6 +334,79 @@ Ausgangswerte (`Triangle.Benchmarks`, `--job short`, Release, Container mit 4 Ke
 Vorgehen pro Optimierung: Benchmark vorher/nachher (Standard-Job), Charakterisierungstests grün
 (bei verhaltensneutralen Änderungen unveränderte Fingerabdrücke).
 
+### Performance-Optimierung
+
+Profil der realen Fälle: In großen Netzen gingen 25–30 % der Laufzeit in Garbage-Collection-
+Pausen. Das wachsende Netz ist komplett lebendig, und jede Sammlung kopiert alle neuen Objekte –
+die Pausen hängen an der **Anzahl** der Objekte. Jedes Dreieck bestand aus vier Heap-Objekten
+(das Dreieck und je ein Array für Ecken, Nachbarn, Teilsegmente), das waren über die Hälfte aller
+Allokationen. Änderungen (alle verhaltensneutral, Golden-Fingerprints unverändert):
+
+* Dreiecke und Teilsegmente speichern Ecken, Nachbarn und Teilsegmente unter .NET 8 als
+  `[InlineArray]` direkt im Objekt (die Bibliothek baut dafür zusätzlich für `net8.0`;
+  `netstandard2.0`, z. B. .NET Framework 4.8, behält die Arrays).
+* `InCircleAdapt` legte bei jedem Aufruf rund 40 Hilfsarrays an; sie liegen jetzt im
+  thread-lokalen Arbeitsspeicher (fast kozirkuläre Punkte, z. B. im Rastermodus, rufen ihn oft auf).
+* Rastermodus: Die aCute-Relocation wurde berechnet und dann verworfen (24 % der Zeit), am Ende
+  wurden für alle Punkte Sterne aufgebaut, obwohl fast alle schon auf dem Raster liegen.
+* aCute-Keilschnitt: Winkelfunktionen einmal pro Aufruf statt pro Kante.
+
+Gemessen mit BenchmarkDotNet (Standard-Job), alter und neuer Stand je Szenario direkt
+hintereinander (zwei getrennte Läufe im Abstand von Stunden sind auf der Cloud-Maschine nicht
+vergleichbar, die CPU-Leistung schwankte dort um 20–25 %):
+
+| Szenario | vorher | nachher | |
+|----------|-------:|--------:|---:|
+| ALKIS-Kachel 30°, Snap 1 cm | 501 ms | 398 ms | −21 % |
+| ALKIS-Kachel 30°, Raster 1 cm + Keil 3 cm | 638 ms | 327 ms | −49 % |
+| ALKIS-Kachel 20°, Snap 1 cm | 178 ms | 147 ms | −17 % |
+| kleine ALKIS-Kachel 20° | 26,1 ms | 23,5 ms | −10 % |
+| Zufallspunkte 30° | 33,2 ms | 28,3 ms | −15 % |
+| `parcels-mismatch` (Steiner-Limit) | 1.010 ms | 839 ms | −17 % |
+| kreuzende Segmente 20° | 3,73 ms | 3,55 ms | −5 % |
+| UTM-Bruchkanten 33° | 10,5 ms | 9,7 ms | −7 % |
+
+Der Herne-Korpus (201 Kacheln, Raster + Keil) läuft in 60/92 s statt 109/180 s (20°/30°).
+
+## Standard-Benchmarks für CDT (`BenchmarkDatasetsTest`, Korpus)
+
+Immer im Testlauf (`Robustness/BenchmarkDatasetsTest.cs`, Daten in `Robustness/Data`):
+
+* **Exakte Prädikate:** je 1.000 extreme Grenzfälle für `orient2d` und `incircle` mit bekanntem
+  Vorzeichen (Nanevski et al., Werte bis 10³³): alle richtig.
+* **Ruppert-Ahornblatt** (Kanadische Flagge) ohne Qualität und mit 20°, 30°, 33°.
+* **Gitter** (kozirkulär): 10×10 (auch Abstand 0,1 und UTM-Koordinaten), 100×100: deterministisch,
+  mit allen drei Triangulatoren und gemischter Reihenfolge Delaunay; mit diagonalen Zwangskanten
+  bei 30° keine schlechten Dreiecke.
+* **Konzentrische Kreise** mit Loch (kein Dreieck im Loch, Fläche exakt) und ohne Loch (kein
+  Dreieck kreuzt den inneren Kreis).
+* **Spitzer Stern** mit Spitzenwinkeln von 10⁻³ bis 10⁻¹⁵ rad bei drei Maßstäben (1, UTM, 10⁻⁶).
+
+Korpus (explizit, externe Daten):
+
+| Daten | Ergebnis |
+|-------|----------|
+| Testsammlung von artem-ogre/CDT (43 Dateien: hängende und überlappende Constraints, Punkte auf Kanten, Schweden, Gitarre …) | alle gültig, auch `issue-211` (siehe unten) |
+| Natural Earth Küsten 110m / 50m / 10m (10.000 / 59.000 / 407.000 Punkte) | CDT 0,1 / 1,0 / 4,8 s |
+| Natural Earth 10m mit Qualität (ausreichend Steiner-Punkte) | 20°: 11 s, 1,7 Mio. Dreiecke, 0,27 % schlecht; 30°: 22 s, 2,8 Mio., 0,39 % |
+| Natural Earth 50m, 30° | 2,6 s, 0,23 % schlecht |
+
+Gefunden und behoben:
+
+* **`issue-211`** (lange Kanten, die eine Polylinie unter praktisch 0° vielfach kreuzen): Der Noder
+  konvergierte bei keiner Toleranz, die Triangulierung brach mit einer Exception ab (die CDT-
+  Bibliothek selbst wirft hier ebenfalls). Jetzt folgt als letzte Stufe Snap-Rounding auf die größte
+  Toleranz. Dabei werden die Segmente zuerst durch die vorhandenen Punkte geführt und erst dann
+  neue Schnittpunkte berechnet; umgekehrt explodierte die Punktzahl (244 → 12.634 in vier Runden).
+  Eingaben, die bisher konvergierten, sind unverändert.
+* Der Korpus-Harness selbst war für große Daten quadratisch (Segmentabdeckung, Streifen-
+  Klassifizierung) und lief bei Natural Earth 10m in den Timeout; die Triangulierung brauchte
+  nur 3 s. Außerdem zählt die Steiner-Limit-Erkennung jetzt wie die Bibliothek (auch wieder
+  gelöschte Punkte).
+
+Thingi10k (3D-Modelle) wurde nicht verwendet: Dafür müssten erst 2D-Schnitte erzeugt werden,
+das testet eher den Schnittgenerator als die Triangulierung.
+
 ## Raster, Keile und Geländevereinfachung
 
 Testgetrieben entwickelt (Tests zuerst rot: `GridSnapRoundingTest`, `WedgeMergeTest`,

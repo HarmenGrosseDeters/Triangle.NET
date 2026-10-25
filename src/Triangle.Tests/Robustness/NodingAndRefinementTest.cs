@@ -194,13 +194,35 @@ namespace TriangleNet.Tests.Robustness
         }
 
         [Test]
-        public void NodingThatDoesNotConvergeIsReported()
+        public void NodingThatDoesNotConvergeFallsBackToSnapRounding()
         {
-            // If noding doesn't converge (here: only one iteration allowed), this must be
-            // reported instead of running forever or returning crossing segments.
+            // If noding doesn't converge (here: only one iteration allowed; in practice e.g.
+            // many segments crossing at tiny angles, test input issue-211 of artem-ogre/CDT),
+            // snap rounding to the largest tolerance is used instead of giving up. It never
+            // returns crossing segments.
             var poly = StackedSquares(1e-6);
 
-            Assert.Throws<InvalidOperationException>(() => SegmentNoder.Node(poly, new RobustPredicates(), maxIterations: 1));
+            var noded = SegmentNoder.Node(poly, new RobustPredicates(), maxIterations: 1);
+
+            var predicates = new RobustPredicates();
+            var segments = noded.Segments.ToList();
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                for (int j = i + 1; j < segments.Count; j++)
+                {
+                    Vertex a = segments[i].GetVertex(0), b = segments[i].GetVertex(1);
+                    Vertex c = segments[j].GetVertex(0), d = segments[j].GetVertex(1);
+
+                    bool cross = predicates.CounterClockwise(a, b, c) * predicates.CounterClockwise(a, b, d) < 0 &&
+                                 predicates.CounterClockwise(c, d, a) * predicates.CounterClockwise(c, d, b) < 0;
+
+                    Assert.That(cross, Is.False);
+                }
+            }
+
+            var mesh = new GenericMesher().Triangulate(noded, new ConstraintOptions { ResolveIntersections = false });
+            MeshAssert.IsValid(mesh);
         }
 
         [Test]

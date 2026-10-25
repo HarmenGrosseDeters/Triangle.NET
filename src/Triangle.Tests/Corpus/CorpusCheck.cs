@@ -119,7 +119,7 @@ namespace TriangleNet.Tests.Corpus
             SegmentNoder.Node(poly, predicates, out double noderTolerance, minTolerance: snapTolerance);
             double tol = Math.Max(Math.Max(scale * 1e-11, 4 * noderTolerance), gridSize + wedgeTolerance);
 
-            var subsegs = mesh.Segments.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList();
+            var subsegs = new SegmentIndex(mesh.Segments.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList(), tol);
             int missing = poly.Segments.Count(s => !IsCovered(subsegs, s.GetVertex(0), s.GetVertex(1), tol));
 
             if (missing > 0 && Environment.GetEnvironmentVariable("TRIANGLE_CORPUS_DEBUG") == "1")
@@ -138,7 +138,8 @@ namespace TriangleNet.Tests.Corpus
             // Quality statistics (no failure: small input angles can't be fixed, and the
             // Steiner point limit may stop the refinement).
             int bad = minAngle > 0 ? mesh.Triangles.Count(t => MinimumAngle(t) < minAngle - 0.01) : 0;
-            bool limit = minAngle > 0 && mesh.Vertices.Count - poly.Points.Count >= steinerPoints;
+            // The limit counts all insertions (also vertices deleted again).
+            bool limit = minAngle > 0 && mesh.steinerleft == 0;
 
             // Triangles which are flat or inverted after rounding the coordinates to the output grid.
             double og = gridSize > 0.0 ? gridSize : outputGrid;
@@ -176,7 +177,8 @@ namespace TriangleNet.Tests.Corpus
         /// <summary>
         /// Classify the bad triangles: at a small input angle (a vertex where two segments form an
         /// angle below the minimum angle), below the grid floor (shortest edge less than two grid
-        /// cells), in a narrow strip between a segment and another segment closer than 5 cm,
+        /// cells), in a narrow strip between a segment and another segment closer than 5 cm
+        /// (at most 0.1 % of the extent),
         /// touching a segment, or in the interior.
         /// </summary>
         private static (int, int, int, int, int) Classify(Mesh mesh, double minAngle, double gridSize)
@@ -186,7 +188,10 @@ namespace TriangleNet.Tests.Corpus
                 return (0, 0, 0, 0, 0);
             }
 
-            const double strip = 0.05;
+            // 5 cm for metric data; for data at other scales (degrees, unit square) a small
+            // fraction of the extent (a fixed width would cover everything there).
+            var extent = mesh.Bounds;
+            double strip = Math.Min(0.05, 1e-3 * Math.Max(extent.Width, extent.Height));
 
             // Directions of the segments at each vertex, and the segment edges.
             var directions = new Dictionary<int, List<double>>();
@@ -236,6 +241,7 @@ namespace TriangleNet.Tests.Corpus
             int angle = 0, floor = 0, narrow = 0, segment = 0, interior = 0;
 
             var segmentList = mesh.Segments.ToList();
+            var segmentIndex = new SegmentIndex(segmentList.Select(s => ((Point)s.GetVertex(0), (Point)s.GetVertex(1))).ToList(), strip);
 
             // Is a segment other than (p, q) (and its collinear continuations) closer than the
             // strip width to the point?
@@ -243,8 +249,9 @@ namespace TriangleNet.Tests.Corpus
             {
                 double ux = q.X - p.X, uy = q.Y - p.Y;
 
-                foreach (var s in segmentList)
+                foreach (int k in segmentIndex.QueryIndices(c, c))
                 {
+                    var s = segmentList[k];
                     Vertex a = s.GetVertex(0), b = s.GetVertex(1);
 
                     if (Math.Max(Math.Min(a.X, b.X) - c.X, c.X - Math.Max(a.X, b.X)) > strip ||
@@ -322,8 +329,10 @@ namespace TriangleNet.Tests.Corpus
             return min;
         }
 
-        private static bool IsCovered(List<(Point, Point)> subsegs, Point p0, Point p1, double tol)
+        private static bool IsCovered(SegmentIndex index, Point p0, Point p1, double tol)
         {
+            var subsegs = index.Query(p0, p1);
+
             double dx = p1.X - p0.X, dy = p1.Y - p0.Y, len = Math.Sqrt(dx * dx + dy * dy);
 
             // Union of the subsegments lying on p0-p1, projected onto p0-p1.
@@ -354,6 +363,100 @@ namespace TriangleNet.Tests.Corpus
             }
 
             return Math.Abs(covered - len) <= tol * 10 + len * 1e-9;
+        }
+
+        /// <summary>
+        /// Uniform grid of segments (the coverage check is quadratic otherwise, e.g. 400,000
+        /// coastline segments).
+        /// </summary>
+        private class SegmentIndex
+        {
+            readonly List<(Point, Point)> segments;
+            readonly Dictionary<(long, long), List<int>> cells = new Dictionary<(long, long), List<int>>();
+            readonly double size, margin;
+            readonly int[] stamp;
+            int query;
+
+            public SegmentIndex(List<(Point, Point)> segments, double margin)
+            {
+                this.segments = segments;
+                this.margin = margin;
+                stamp = new int[segments.Count];
+
+                double minx = double.MaxValue, miny = double.MaxValue, maxx = double.MinValue, maxy = double.MinValue;
+
+                foreach (var (a, b) in segments)
+                {
+                    minx = Math.Min(minx, Math.Min(a.X, b.X)); maxx = Math.Max(maxx, Math.Max(a.X, b.X));
+                    miny = Math.Min(miny, Math.Min(a.Y, b.Y)); maxy = Math.Max(maxy, Math.Max(a.Y, b.Y));
+                }
+
+                size = Math.Max(Math.Max(maxx - minx, maxy - miny) / Math.Max(1.0, Math.Sqrt(segments.Count)), 1e-300);
+
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    var (a, b) = segments[i];
+
+                    foreach (var key in Cells(a, b))
+                    {
+                        if (!cells.TryGetValue(key, out var list))
+                        {
+                            cells[key] = list = new List<int>();
+                        }
+
+                        list.Add(i);
+                    }
+                }
+            }
+
+            private IEnumerable<(long, long)> Cells(Point a, Point b)
+            {
+                long i0 = (long)Math.Floor((Math.Min(a.X, b.X) - margin) / size), i1 = (long)Math.Floor((Math.Max(a.X, b.X) + margin) / size);
+                long j0 = (long)Math.Floor((Math.Min(a.Y, b.Y) - margin) / size), j1 = (long)Math.Floor((Math.Max(a.Y, b.Y) + margin) / size);
+
+                // Long diagonal segments: only the cells near the segment.
+                double dx = b.X - a.X, dy = b.Y - a.Y, length = Math.Sqrt(dx * dx + dy * dy);
+
+                for (long i = i0; i <= i1; i++)
+                {
+                    for (long j = j0; j <= j1; j++)
+                    {
+                        if (length > 0)
+                        {
+                            double cx = (i + 0.5) * size, cy = (j + 0.5) * size;
+                            double distance = Math.Abs(dx * (cy - a.Y) - dy * (cx - a.X)) / length;
+
+                            if (distance > size + margin) continue;
+                        }
+
+                        yield return (i, j);
+                    }
+                }
+            }
+
+            public List<(Point, Point)> Query(Point a, Point b) => QueryIndices(a, b).Select(i => segments[i]).ToList();
+
+            public List<int> QueryIndices(Point a, Point b)
+            {
+                query++;
+                var result = new List<int>();
+
+                foreach (var key in Cells(a, b))
+                {
+                    if (!cells.TryGetValue(key, out var list)) continue;
+
+                    foreach (int i in list)
+                    {
+                        if (stamp[i] != query)
+                        {
+                            stamp[i] = query;
+                            result.Add(i);
+                        }
+                    }
+                }
+
+                return result;
+            }
         }
 
         private static bool IsFinite(double x) => !double.IsNaN(x) && !double.IsInfinity(x);
