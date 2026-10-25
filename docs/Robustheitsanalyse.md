@@ -729,7 +729,7 @@ Direkter Vergleich mit Original (Ringe als Linien und als Löcher, ohne Qualitä
 | | gültig | leer (erwartet) | Exception | Endlosschleife | inkonsistent |
 |---|---:|---:|---:|---:|---:|
 | Original | 305 | 8 | 31 | 2 | 2 |
-| Fork | 338 | 10 | 0 | 0 | 0 |
+| Fork | 336 | 12 | 0 | 0 | 0 |
 
 Die leeren Ergebnisse entsprechen den Erwartungen von earcut (0 Dreiecke für entartete
 Eingaben). Lochringe ohne Fläche (earcut `water-huge`, `issue83`) warfen vorher eine Exception;
